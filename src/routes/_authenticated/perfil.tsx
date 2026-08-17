@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from "react";
 import { AppHeader } from "@/components/AppHeader";
 import { jogosQuery, formatarNota } from "@/lib/jogos";
 import { supabase } from "@/integrations/supabase/client";
-import { Pencil, Check, X } from "lucide-react";
+import { Pencil, Check, X, Trophy } from "lucide-react";
 import { toast } from "sonner";
 import { EditGameModal } from "@/components/EditGameModal";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -31,6 +31,7 @@ function Perfil() {
   const [pagina, setPagina] = useState(1);
   const [yearFilter, setYearFilter] = useState<string>("All");
   const [platformFilter, setPlatformFilter] = useState<string>("All");
+  const [textFilter, setTextFilter] = useState<string>("");
   const [userEmail, setUserEmail] = useState("");
   const [userName, setUserName] = useState("");
   
@@ -50,6 +51,7 @@ function Perfil() {
     setPagina(1);
     setYearFilter("All");
     setPlatformFilter("All");
+    setTextFilter("");
   };
 
   const salvarNome = async () => {
@@ -92,6 +94,10 @@ function Perfil() {
   }, [gamesToShow]);
 
   let filteredGames = gamesToShow;
+  if (textFilter.trim() !== "") {
+    const lowerTerm = textFilter.toLowerCase();
+    filteredGames = filteredGames.filter(j => j.nome.toLowerCase().includes(lowerTerm));
+  }
   if (yearFilter !== "All") {
     filteredGames = filteredGames.filter(j => String(j.ano_jogado) === yearFilter);
   }
@@ -187,47 +193,58 @@ function Perfil() {
           <nav className="flex gap-6 overflow-x-auto">
             <button
               onClick={() => mudarAba("Backlog")}
-              className={`pb-3 whitespace-nowrap text-sm font-semibold transition-colors cursor-pointer ${
+              className={`pb-3 flex flex-col items-center gap-1 whitespace-nowrap transition-colors cursor-pointer ${
                 activeTab === "Backlog"
                   ? "border-b-2 border-ember text-ember"
                   : "text-muted-foreground hover:text-foreground"
               }`}
             >
-              ⌛ Backlog
+              <span className="text-sm font-semibold">⌛ Backlog</span>
+              <span className="text-[10px] font-medium opacity-70">{backlog.length} {backlog.length === 1 ? "jogo" : "jogos"}</span>
             </button>
             <button
               onClick={() => mudarAba("Zerados")}
-              className={`pb-3 whitespace-nowrap text-sm font-semibold transition-colors cursor-pointer ${
+              className={`pb-3 flex flex-col items-center gap-1 whitespace-nowrap transition-colors cursor-pointer ${
                 activeTab === "Zerados"
                   ? "border-b-2 border-ember text-ember"
                   : "text-muted-foreground hover:text-foreground"
               }`}
             >
-              🏆 Zerados
+              <span className="text-sm font-semibold">🏆 Zerados</span>
+              <span className="text-[10px] font-medium opacity-70">{zerados.length} {zerados.length === 1 ? "jogo" : "jogos"}</span>
             </button>
             <button
               onClick={() => mudarAba("Platinados")}
-              className={`pb-3 whitespace-nowrap text-sm font-semibold transition-colors cursor-pointer ${
+              className={`pb-3 flex flex-col items-center gap-1 whitespace-nowrap transition-colors cursor-pointer ${
                 activeTab === "Platinados"
                   ? "border-b-2 border-ember text-ember"
                   : "text-muted-foreground hover:text-foreground"
               }`}
             >
-              💎 Platinados
+              <span className="text-sm font-semibold">💎 Platinados</span>
+              <span className="text-[10px] font-medium opacity-70">{platinados.length} {platinados.length === 1 ? "jogo" : "jogos"}</span>
             </button>
             <button
               onClick={() => mudarAba("Jogando")}
-              className={`pb-3 whitespace-nowrap text-sm font-semibold transition-colors cursor-pointer ${
+              className={`pb-3 flex flex-col items-center gap-1 whitespace-nowrap transition-colors cursor-pointer ${
                 activeTab === "Jogando"
                   ? "border-b-2 border-ember text-ember"
                   : "text-muted-foreground hover:text-foreground"
               }`}
             >
-              🕹️ Jogando Agora
+              <span className="text-sm font-semibold">🕹️ Jogando</span>
+              <span className="text-[10px] font-medium opacity-70">{jogando.length} {jogando.length === 1 ? "jogo" : "jogos"}</span>
             </button>
           </nav>
 
-          <div className="flex gap-2 shrink-0 pb-3">
+          <div className="flex flex-wrap gap-2 shrink-0 pb-3">
+            <input
+              type="text"
+              placeholder="Buscar pelo nome..."
+              value={textFilter}
+              onChange={(e) => { setTextFilter(e.target.value); setPagina(1); }}
+              className="w-[180px] bg-surface-2 border border-border h-9 text-sm rounded-md px-3 text-foreground focus:outline-none focus:ring-1 focus:ring-ember placeholder:text-muted-foreground"
+            />
             {availablePlatforms.length > 0 && (
               <Select value={platformFilter} onValueChange={(val) => { setPlatformFilter(val); setPagina(1); }}>
                 <SelectTrigger className="w-[140px] bg-surface-2 border-border h-9 text-sm">
@@ -286,6 +303,11 @@ function Perfil() {
                       {j.plataforma && (
                         <div className="absolute right-2 top-2 rounded bg-black/80 px-1.5 py-0.5 text-[10px] font-bold text-white backdrop-blur-sm">
                           {j.plataforma}
+                        </div>
+                      )}
+                      {j.status === "Platinado" && (
+                        <div className="absolute left-2 top-2 rounded-full bg-background/80 p-1 backdrop-blur-sm">
+                          <Trophy className="h-3.5 w-3.5 text-platinum" />
                         </div>
                       )}
                     </div>
