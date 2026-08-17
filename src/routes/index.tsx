@@ -16,7 +16,6 @@ import { Trophy, CheckCircle2, CalendarDays, Clock } from "lucide-react";
 
 import { AppHeader } from "@/components/AppHeader";
 import { jogosQuery, formatarNota, statusConcluido, type Jogo } from "@/lib/jogos";
-import { buscarCapas } from "@/lib/game-covers.functions";
 import { useSessaoUsuario } from "@/lib/use-session";
 
 export const Route = createFileRoute("/")({
@@ -193,24 +192,8 @@ function Dashboard() {
     };
   }, [jogos]);
 
-  const nomesBusca = useMemo(() => {
-    const lista = [
-      ...stats.recentes.map((j) => j.nome),
-      ...stats.jogandoAgora.map((j) => j.nome),
-    ].filter((n) => n && n !== "—");
-    return [...new Set(lista)];
-  }, [stats]);
-
-  const { data: capas = [] } = useQuery({
-    queryKey: ["capas", nomesBusca],
-    enabled: nomesBusca.length > 0,
-    staleTime: 1000 * 60 * 60,
-    queryFn: () => buscarCapas({ data: { nomes: nomesBusca } }),
-  });
-  
-  const retratoDe = (nome: string) => {
-    const c = capas.find((x) => x.nome === nome);
-    return c?.retrato ?? c?.imagem ?? null;
+  const retratoDe = (imagemFixa: string | null) => {
+    return imagemFixa ?? null;
   };
 
 
@@ -271,7 +254,7 @@ function Dashboard() {
           ) : (
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-5">
               {stats.recentes.map((j) => {
-                const capa = retratoDe(j.nome);
+                const capa = retratoDe(j.imagem);
                 return (
                   <article
                     key={j.id}
@@ -335,7 +318,7 @@ function Dashboard() {
                   key={j.id}
                   className="group flex items-center gap-4 rounded-xl border border-border bg-surface p-3 transition-all duration-300 hover:-translate-y-1 hover:border-primary/50 hover:shadow-lg"
                 >
-                  <Retrato nome={j.nome} src={retratoDe(j.nome)} tamanho={120} />
+                  <Retrato nome={j.nome} src={retratoDe(j.imagem)} tamanho={120} />
                   <div className="min-w-0 flex-1 space-y-1">
                     <p className="truncate font-display text-sm font-semibold" title={j.nome}>
                       {j.nome}

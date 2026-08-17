@@ -4,7 +4,6 @@ import { useState, useEffect, useMemo } from "react";
 import { AppHeader } from "@/components/AppHeader";
 import { jogosQuery, formatarNota } from "@/lib/jogos";
 import { supabase } from "@/integrations/supabase/client";
-import { buscarCapas } from "@/lib/game-covers.functions";
 import { Pencil, Check, X } from "lucide-react";
 import { toast } from "sonner";
 import { EditGameModal } from "@/components/EditGameModal";
@@ -19,23 +18,7 @@ export const Route = createFileRoute("/_authenticated/perfil")({
   }),
   loader: async ({ context: { queryClient } }) => {
     // 1. Puxar todos os jogos primeiro
-    const jogos = await queryClient.ensureQueryData(jogosQuery);
-
-    // 2. Por padrão a aba inicial é "Jogando", então paginamos os 10 primeiros dessa aba
-    const jogando = jogos.filter((j) => j.status === "Jogando");
-    const primeiraPagina = jogando.slice(0, 10);
-    const nomes = [...new Set(primeiraPagina.map((j) => j.nome).filter(Boolean))];
-
-    // 3. Pré-carregar na memória do servidor as capas da primeira página,
-    // garantindo que não vai ter piscada/placeholder quando o html carregar.
-    if (nomes.length > 0) {
-      await queryClient.ensureQueryData({
-        queryKey: ["capas", nomes],
-        staleTime: 1000 * 60 * 60,
-        queryFn: () => buscarCapas({ data: { nomes } }),
-      });
-    }
-
+    await queryClient.ensureQueryData(jogosQuery);
     return null;
   },
   component: Perfil,
@@ -106,20 +89,8 @@ function Perfil() {
   const totalPages = Math.ceil(filteredGames.length / itemsPerPage);
   const pagedGames = filteredGames.slice((pagina - 1) * itemsPerPage, pagina * itemsPerPage);
 
-  const nomesBusca = useMemo(() => {
-    return [...new Set(pagedGames.map((j) => j.nome).filter(Boolean))];
-  }, [pagedGames]);
-
-  const { data: capas = [] } = useQuery({
-    queryKey: ["capas", nomesBusca],
-    enabled: nomesBusca.length > 0,
-    staleTime: 1000 * 60 * 60,
-    queryFn: () => buscarCapas({ data: { nomes: nomesBusca } }),
-  });
-  
-  const retratoDe = (nome: string) => {
-    const c = capas.find((x) => x.nome === nome);
-    return c?.retrato ?? c?.imagem ?? null;
+  const retratoDe = (imagemFixa: string | null) => {
+    return imagemFixa ?? null;
   };
 
   const username = userEmail.split("@")[0];
@@ -253,7 +224,7 @@ function Perfil() {
             </div>
           ) : (
             pagedGames.map((j) => {
-              const capa = retratoDe(j.nome);
+              const capa = retratoDe(j.imagem);
               return (
                 <EditGameModal key={j.id} jogo={j} capa={capa}>
                   <button type="button" className="group relative flex flex-col overflow-hidden rounded-xl bg-surface-2 transition-transform hover:-translate-y-1 hover:shadow-xl border border-border/50 text-left cursor-pointer">

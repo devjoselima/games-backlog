@@ -177,11 +177,7 @@ export function EditGameModal({ jogo, capa, children }: { jogo: Jogo; capa?: str
                 variant="outline"
                 className="flex-1 border-red-500/50 text-red-500 hover:bg-red-500/10 hover:text-red-500"
                 disabled={excluir.isPending || atualizar.isPending}
-                onClick={() => {
-                  if (window.confirm("Tem certeza que deseja excluir este jogo?")) {
-                    excluir.mutate();
-                  }
-                }}
+                onClick={() => excluir.mutate()}
               >
                 <Trash2 className="w-4 h-4 mr-2" />
                 Excluir

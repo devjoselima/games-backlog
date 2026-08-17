@@ -29,7 +29,7 @@ export const buscarJogos = createServerFn({ method: "GET" })
       return resultados.map((j) => ({
         id: String(j.id),
         nome: j.name,
-        imagem: j.cover?.image_id ? imagemIgdb(j.cover.image_id, "cover_small") : null,
+        imagem: j.cover?.image_id ? imagemIgdb(j.cover.image_id, "cover_big") : null,
       }));
     } catch {
       return [];

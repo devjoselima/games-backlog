@@ -13,6 +13,7 @@ export type Jogo = {
   horas_jogadas: number | null;
   ordem: number | null;
   created_at: string;
+  imagem: string | null;
 };
 
 export const STATUS_OPCOES = ["Zerado", "Platinado", "Jogando", "Quero jogar"] as const;
@@ -35,7 +36,7 @@ export const GENERO_OPCOES = [
 export async function fetchJogos(): Promise<Jogo[]> {
   const { data, error } = await supabase
     .from("jogos")
-    .select("id, nome, genero, plataforma, status, ano_jogado, nota, horas_jogadas, ordem, created_at")
+    .select("id, nome, genero, plataforma, status, ano_jogado, data_zerado, nota, horas_jogadas, ordem, created_at, imagem")
     .order("ano_jogado", { ascending: true })
     .order("ordem", { ascending: true, nullsFirst: false })
     .order("created_at", { ascending: true });

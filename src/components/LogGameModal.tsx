@@ -65,18 +65,19 @@ export function LogGameModal({ children }: { children: React.ReactNode }) {
       const notaFinal = isConcluido && form.nota ? Number(form.nota.replace(",", ".")) : null;
       const horasFinal = isConcluido && form.horas_jogadas ? Number(form.horas_jogadas.replace(",", ".")) : null;
       
-      const { error } = await supabase.from("jogos").insert({
-        user_id: uid,
-        nome: form.nome.trim(),
-        genero: form.genero || null,
-        plataforma: form.plataforma || null,
-        status: form.status,
-        data_zerado: dataFinal,
-        ano_jogado: dataFinal ? Number(dataFinal.split("-")[0]) : null,
-        nota: notaFinal,
-        horas_jogadas: horasFinal,
-      });
-      if (error) throw error;
+        const { error } = await supabase.from("jogos").insert({
+          user_id: uid,
+          nome: form.nome.trim(),
+          genero: form.genero || null,
+          plataforma: form.plataforma || null,
+          status: form.status,
+          data_zerado: dataFinal,
+          ano_jogado: dataFinal ? Number(dataFinal.split("-")[0]) : null,
+          nota: notaFinal,
+          horas_jogadas: horasFinal,
+          imagem: capaSelecionada,
+        });
+        if (error) throw error;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["jogos"] });
