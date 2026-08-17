@@ -77,12 +77,12 @@ export function LogGameModal({ children }: { children: React.ReactNode }) {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>{children}</DialogTrigger>
-      <DialogContent className="sm:max-w-[425px] bg-background">
+      <DialogContent className="sm:max-w-[550px] w-[95vw] overflow-hidden bg-background">
         <DialogHeader>
           <DialogTitle>Log Game</DialogTitle>
         </DialogHeader>
         <form
-          className="flex flex-col gap-3 py-4"
+          className="flex flex-col gap-3 py-4 w-full"
           onSubmit={(e) => {
             e.preventDefault();
             if (!form.nome.trim()) {
@@ -92,10 +92,10 @@ export function LogGameModal({ children }: { children: React.ReactNode }) {
             criar.mutate();
           }}
         >
-          <div className="space-y-1.5">
+          <div className="space-y-1.5 w-full">
             <Label htmlFor="nome">Nome do jogo</Label>
             {form.nome ? (
-              <div className="flex items-center gap-2 rounded-md bg-surface-2 p-2">
+              <div className="flex items-center gap-2 rounded-md bg-surface-2 p-2 w-full overflow-hidden">
                 {capaSelecionada ? (
                   <img
                     src={capaSelecionada}
@@ -103,11 +103,12 @@ export function LogGameModal({ children }: { children: React.ReactNode }) {
                     className="h-8 w-[74px] shrink-0 rounded object-cover"
                   />
                 ) : null}
-                <span className="flex-1 truncate text-sm">{form.nome}</span>
+                <span className="flex-1 truncate text-sm" title={form.nome}>{form.nome}</span>
                 <Button
                   type="button"
                   variant="ghost"
                   size="sm"
+                  className="shrink-0"
                   onClick={() => {
                     set("nome")("");
                     setCapaSelecionada(null);
@@ -119,7 +120,7 @@ export function LogGameModal({ children }: { children: React.ReactNode }) {
                 </Button>
               </div>
             ) : (
-              <div className="relative">
+              <div className="relative w-full">
                 <Input
                   id="nome"
                   autoComplete="off"
@@ -130,11 +131,11 @@ export function LogGameModal({ children }: { children: React.ReactNode }) {
                   }}
                   onFocus={() => setSugestoesAbertas(true)}
                   onBlur={() => window.setTimeout(() => setSugestoesAbertas(false), 150)}
-                  placeholder="Busque um jogo: Resident Evil 4"
-                  className="bg-surface-2"
+                  placeholder="Buscar jogo"
+                  className="bg-surface-2 w-full"
                 />
                 {sugestoesAbertas && (buscando || sugestoes.length > 0) ? (
-                  <div className="absolute z-50 mt-1 max-h-72 w-full overflow-y-auto rounded-md border border-border bg-surface-2 p-1 shadow-lg">
+                  <div className="absolute z-50 mt-1 max-h-72 w-full overflow-y-auto overflow-x-hidden rounded-md border border-border bg-surface-2 p-1 shadow-lg">
                     {buscando && sugestoes.length === 0 ? (
                       <p className="px-2 py-2 text-xs text-muted-foreground">Buscando jogos…</p>
                     ) : null}
@@ -142,7 +143,7 @@ export function LogGameModal({ children }: { children: React.ReactNode }) {
                       <button
                         key={s.id}
                         type="button"
-                        className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-background"
+                        className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-background overflow-hidden"
                         onMouseDown={(e) => e.preventDefault()}
                         onClick={() => {
                           set("nome")(s.nome);
@@ -160,7 +161,7 @@ export function LogGameModal({ children }: { children: React.ReactNode }) {
                         ) : (
                           <span className="h-8 w-[74px] shrink-0 rounded bg-background" />
                         )}
-                        <span className="truncate">{s.nome}</span>
+                        <span className="truncate flex-1" title={s.nome}>{s.nome}</span>
                       </button>
                     ))}
                   </div>

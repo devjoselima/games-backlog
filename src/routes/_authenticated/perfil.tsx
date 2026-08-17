@@ -5,6 +5,8 @@ import { AppHeader } from "@/components/AppHeader";
 import { jogosQuery, formatarNota } from "@/lib/jogos";
 import { supabase } from "@/integrations/supabase/client";
 import { buscarCapas } from "@/lib/game-covers.functions";
+import { Pencil, Check, X } from "lucide-react";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/perfil")({
   head: () => ({
@@ -42,16 +44,41 @@ function Perfil() {
   const [activeTab, setActiveTab] = useState<"Jogando" | "Backlog" | "Zerados">("Jogando");
   const [pagina, setPagina] = useState(1);
   const [userEmail, setUserEmail] = useState("");
+  const [userName, setUserName] = useState("");
+  
+  // States para edição do nome
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [editNameValue, setEditNameValue] = useState("");
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
       setUserEmail(data.user?.email || "usuario@email.com");
+      setUserName(data.user?.user_metadata?.name || "");
     });
   }, []);
 
   const mudarAba = (aba: "Jogando" | "Backlog" | "Zerados") => {
     setActiveTab(aba);
     setPagina(1);
+  };
+
+  const salvarNome = async () => {
+    const novoNome = editNameValue.trim();
+    if (!novoNome) {
+      toast.error("O nome não pode ser vazio.");
+      return;
+    }
+    try {
+      const { error } = await supabase.auth.updateUser({
+        data: { name: novoNome }
+      });
+      if (error) throw error;
+      setUserName(novoNome);
+      setIsEditingName(false);
+      toast.success("Nome atualizado com sucesso!");
+    } catch (err: any) {
+      toast.error("Erro ao atualizar nome: " + err.message);
+    }
   };
 
   const jogando = jogos.filter((j) => j.status === "Jogando");
@@ -83,7 +110,7 @@ function Perfil() {
   };
 
   const username = userEmail.split("@")[0];
-  const name = username.charAt(0).toUpperCase() + username.slice(1);
+  const name = userName || (username.charAt(0).toUpperCase() + username.slice(1));
 
   return (
     <div className="min-h-screen bg-background">
@@ -100,8 +127,41 @@ function Perfil() {
             />
           </div>
           <div className="flex flex-col items-center sm:items-start text-center sm:text-left">
-            <h1 className="font-display text-3xl font-bold text-foreground">{name}</h1>
-            <p className="text-sm text-muted-foreground">@{username}</p>
+            {isEditingName ? (
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={editNameValue}
+                  onChange={(e) => setEditNameValue(e.target.value)}
+                  className="font-display text-2xl font-bold bg-background border border-border rounded-md px-3 py-1 text-foreground focus:outline-none focus:ring-2 focus:ring-ember"
+                  autoFocus
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") salvarNome();
+                    if (e.key === "Escape") setIsEditingName(false);
+                  }}
+                />
+                <button onClick={salvarNome} className="p-2 text-green-500 hover:bg-green-500/10 rounded-md transition-colors" title="Salvar">
+                  <Check className="w-5 h-5" />
+                </button>
+                <button onClick={() => setIsEditingName(false)} className="p-2 text-muted-foreground hover:bg-surface rounded-md transition-colors" title="Cancelar">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-3 group">
+                <h1 className="font-display text-3xl font-bold text-foreground">{name}</h1>
+                <button 
+                  onClick={() => {
+                    setEditNameValue(name);
+                    setIsEditingName(true);
+                  }}
+                  className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 text-muted-foreground hover:text-foreground hover:bg-surface rounded-md"
+                  title="Editar nome"
+                >
+                  <Pencil className="w-4 h-4" />
+                </button>
+              </div>
+            )}
 
             <div className="mt-5 flex gap-4">
               <div className="flex flex-col items-center justify-center rounded-xl bg-background/50 px-6 py-3 border border-border/50">

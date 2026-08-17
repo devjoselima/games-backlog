@@ -30,13 +30,14 @@ export const Route = createFileRoute("/auth")({
 function AuthPage() {
   const navigate = useNavigate();
   const [modo, setModo] = useState<"login" | "cadastro">("login");
+  const [nome, setNome] = useState("");
   const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
   const [carregando, setCarregando] = useState(false);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
-      if (data.session) navigate({ to: "/cadastro", replace: true });
+      if (data.session) navigate({ to: "/perfil", replace: true });
     });
   }, [navigate]);
 
@@ -47,12 +48,17 @@ function AuthPage() {
       if (modo === "login") {
         const { error } = await supabase.auth.signInWithPassword({ email, password: senha });
         if (error) throw error;
-        navigate({ to: "/cadastro", replace: true });
+        navigate({ to: "/perfil", replace: true });
       } else {
         const { error } = await supabase.auth.signUp({
           email,
           password: senha,
-          options: { emailRedirectTo: `${window.location.origin}/auth` },
+          options: {
+            emailRedirectTo: `${window.location.origin}/auth`,
+            data: {
+              name: nome,
+            },
+          },
         });
         if (error) throw error;
         toast.success("Conta criada! Confirme o e-mail para entrar.");
@@ -76,6 +82,18 @@ function AuthPage() {
         </p>
 
         <form onSubmit={enviar} className="mt-6 space-y-4 rounded-xl border border-border bg-card p-5">
+          {modo === "cadastro" && (
+            <div className="space-y-1.5">
+              <Label htmlFor="nome">Nome</Label>
+              <Input
+                id="nome"
+                type="text"
+                required
+                value={nome}
+                onChange={(e) => setNome(e.target.value)}
+              />
+            </div>
+          )}
           <div className="space-y-1.5">
             <Label htmlFor="email">E-mail</Label>
             <Input
