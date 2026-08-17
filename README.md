@@ -1,29 +1,45 @@
-# Welcome to your Lovable project
+# Backlog Games
 
-This project was built with [Lovable](https://lovable.dev).
+Este é um projeto pessoal para gerenciamento de um backlog de jogos. Permite manter uma lista organizada dos jogos que você já zerou, os que está jogando e os que deseja jogar, com uma interface bonita e rápida.
 
-## Build with Lovable
+## 🚀 Tecnologias Utilizadas
 
-Open your project in the [Lovable editor](https://lovable.dev) and keep building.
+- **Vite** + **React** + **TanStack Router**
+- **Supabase** (Banco de dados e Autenticação)
+- **Tailwind CSS** (Estilização)
+- **IGDB / Twitch API** (Capas dos jogos)
 
-- **Ship faster**: describe what you want to build and Lovable handles the code.
-- **Stay in sync**: connect the project to GitHub and every change made in Lovable is committed straight to your repository.
-- **Full ownership**: this code is yours. Push to your repository and your changes sync back into Lovable, ready for your next prompt.
+## 📦 Como rodar localmente
 
-## Development
+1. Clone este repositório.
+2. Instale as dependências:
+   ```bash
+   npm install
+   ```
+3. Crie um arquivo `.env` na raiz do projeto com base nas chaves do seu Supabase e da Twitch (como explicado abaixo).
+4. Inicie o servidor de desenvolvimento:
+   ```bash
+   npm run dev
+   ```
 
-Prefer working locally? You need Node.js and npm — [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating).
+## 🔐 Variáveis de Ambiente (.env)
 
-```sh
-git clone <this-repository-url>
-cd <repository-name>
-npm i
-npm run dev
+Você precisará configurar as seguintes variáveis no seu `.env` local ou no serviço de hospedagem (como Vercel):
+
+```env
+VITE_SUPABASE_URL="sua_url_do_supabase"
+VITE_SUPABASE_ANON_KEY="sua_chave_publica_do_supabase"
+
+SUPABASE_URL="sua_url_do_supabase"
+SUPABASE_SERVICE_ROLE_KEY="sua_chave_secreta_do_supabase"
+
+# Chaves da Twitch Dev para buscar capas na IGDB
+TWITCH_CLIENT_ID="seu_client_id"
+TWITCH_CLIENT_SECRET="seu_client_secret"
 ```
 
-## Built with
+## 🛠️ Scripts Úteis
 
-- TanStack Start
-- TypeScript
-- React
-- Tailwind CSS
+- `npm run dev`: Inicia o servidor de desenvolvimento.
+- `npm run build`: Cria a versão de produção.
+- `npx supabase db push`: Envia as alterações da pasta `supabase/migrations` para o seu banco remoto.
