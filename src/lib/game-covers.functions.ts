@@ -5,7 +5,7 @@ export type { CapaJogo };
 
 export const buscarCapas = createServerFn({ method: "GET" })
   .inputValidator((input: { nomes: string[] }) => ({
-    nomes: (input?.nomes ?? []).slice(0, 14).map((n) => String(n).slice(0, 80)),
+    nomes: (input?.nomes ?? []).slice(0, 100).map((n) => String(n).slice(0, 80)),
   }))
   .handler(async ({ data }): Promise<CapaJogo[]> => {
     if (!data.nomes.length) return [];

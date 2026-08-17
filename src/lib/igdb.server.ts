@@ -29,6 +29,8 @@ async function obterToken(): Promise<string | null> {
   return tokenCache.valor;
 }
 
+let filaPromise: Promise<void> = Promise.resolve();
+
 export async function igdbQuery<T>(
   endpoint: string,
   body: string,
@@ -36,17 +38,27 @@ export async function igdbQuery<T>(
   const token = await obterToken();
   const id = process.env["TWITCH_CLIENT_ID"];
   if (!token || !id) return null;
-  const res = await fetch(`https://api.igdb.com/v4/${endpoint}`, {
-    method: "POST",
-    headers: {
-      "Client-ID": id,
-      Authorization: `Bearer ${token}`,
-      Accept: "application/json",
-    },
-    body,
-  });
-  if (!res.ok) return null;
-  return (await res.json()) as T[];
+
+  // Rate Limiting: garante no máximo ~4 requisições por segundo enfileirando com 250ms de espaçamento
+  await filaPromise;
+  const liberação = new Promise<void>((res) => setTimeout(res, 250));
+  filaPromise = liberação;
+
+  try {
+    const res = await fetch(`https://api.igdb.com/v4/${endpoint}`, {
+      method: "POST",
+      headers: {
+        "Client-ID": id,
+        Authorization: `Bearer ${token}`,
+        Accept: "application/json",
+      },
+      body,
+    });
+    if (!res.ok) return null;
+    return (await res.json()) as T[];
+  } catch {
+    return null;
+  }
 }
 
 export const imagemIgdb = (imageId: string, tamanho: string) =>

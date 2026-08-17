@@ -1,4 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
+import { igdbQuery, imagemIgdb } from "./igdb.server";
 
 export type SugestaoJogo = {
   id: string;
@@ -15,26 +16,21 @@ export const buscarJogos = createServerFn({ method: "GET" })
     if (termo.length < 2) return [];
 
     try {
-      const res = await fetch(
-        `https://steamcommunity.com/actions/SearchApps/${encodeURIComponent(termo)}`,
-        { headers: { Accept: "application/json" } },
+      const termoEscapado = termo.replace(/"/g, '');
+      const body = `search "${termoEscapado}"; fields name, cover.image_id; limit 8;`;
+      
+      const resultados = await igdbQuery<{ id: number; name: string; cover?: { id: number; image_id: string } }>(
+        "games",
+        body
       );
-      if (!res.ok) return [];
-      const json = (await res.json()) as Array<{
-        appid?: string;
-        name?: string;
-        logo?: string;
-        icon?: string;
-      }>;
-      if (!Array.isArray(json)) return [];
-      return json
-        .filter((j) => j?.name)
-        .slice(0, 8)
-        .map((j) => ({
-          id: String(j.appid ?? j.name),
-          nome: j.name as string,
-          imagem: j.logo || j.icon || null,
-        }));
+
+      if (!resultados) return [];
+
+      return resultados.map((j) => ({
+        id: String(j.id),
+        nome: j.name,
+        imagem: j.cover?.image_id ? imagemIgdb(j.cover.image_id, "cover_small") : null,
+      }));
     } catch {
       return [];
     }

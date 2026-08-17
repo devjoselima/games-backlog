@@ -76,7 +76,13 @@ async function buscarNaIgdb(termo: string): Promise<CapaJogo | null> {
   return { nome: termo, imagem, retrato: retrato ?? imagem };
 }
 
+const serverCoverCache = new Map<string, CapaJogo>();
+
 export async function buscarCapa(nome: string): Promise<CapaJogo> {
+  if (serverCoverCache.has(nome)) {
+    return serverCoverCache.get(nome)!;
+  }
+
   const tentativas = [
     ...new Set(
       [nome, nome.replace(/\s*\(.*?\)\s*/g, " ").trim()].filter(Boolean),
@@ -86,7 +92,11 @@ export async function buscarCapa(nome: string): Promise<CapaJogo> {
   try {
     for (const termo of tentativas) {
       const igdb = await buscarNaIgdb(termo);
-      if (igdb) return { ...igdb, nome };
+      if (igdb) {
+        const result = { ...igdb, nome };
+        serverCoverCache.set(nome, result);
+        return result;
+      }
     }
 
     for (const termo of tentativas) {
@@ -101,10 +111,17 @@ export async function buscarCapa(nome: string): Promise<CapaJogo> {
       ]);
       const imagem = temHeader ? header : achado.logo;
       const retrato = temVertical ? vertical : imagem;
-      if (imagem || retrato) return { nome, imagem: imagem ?? null, retrato: retrato ?? null };
+      if (imagem || retrato) {
+        const result = { nome, imagem: imagem ?? null, retrato: retrato ?? null };
+        serverCoverCache.set(nome, result);
+        return result;
+      }
     }
   } catch {
     /* ignora e devolve sem capa */
   }
-  return { nome, imagem: null, retrato: null };
+  
+  const result = { nome, imagem: null, retrato: null };
+  serverCoverCache.set(nome, result);
+  return result;
 }
