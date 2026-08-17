@@ -8,6 +8,7 @@ export type Jogo = {
   plataforma: string | null;
   status: string;
   ano_jogado: number | null;
+  data_zerado: string | null;
   nota: number | null;
   horas_jogadas: number | null;
   ordem: number | null;

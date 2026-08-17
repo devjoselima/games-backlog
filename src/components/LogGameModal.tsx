@@ -6,6 +6,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
+import { format } from "date-fns";
+import { CalendarIcon } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { GENERO_OPCOES, PLATAFORMA_OPCOES, STATUS_OPCOES } from "@/lib/jogos";
 import { buscarJogos } from "@/lib/game-search.functions";
@@ -16,7 +20,7 @@ const vazio = {
   genero: "",
   plataforma: "",
   status: "Zerado",
-  ano_jogado: String(new Date().getFullYear()),
+  data_zerado: "",
   nota: "",
   horas_jogadas: "",
 };
@@ -28,6 +32,7 @@ export function LogGameModal({ children }: { children: React.ReactNode }) {
   const [busca, setBusca] = useState("");
   const [capaSelecionada, setCapaSelecionada] = useState<string | null>(null);
   const [termoBusca, setTermoBusca] = useState("");
+  const [focusedIndex, setFocusedIndex] = useState(-1);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
 
@@ -43,6 +48,10 @@ export function LogGameModal({ children }: { children: React.ReactNode }) {
     staleTime: 5 * 60 * 1000,
   });
 
+  useEffect(() => {
+    setFocusedIndex(-1);
+  }, [sugestoes, busca]);
+
   const set = (k: keyof typeof vazio) => (v: string) => setForm((f) => ({ ...f, [k]: v }));
 
   const criar = useMutation({
@@ -50,15 +59,22 @@ export function LogGameModal({ children }: { children: React.ReactNode }) {
       const { data: sessao } = await supabase.auth.getUser();
       const uid = sessao.user?.id;
       if (!uid) throw new Error("Sessão expirada. Faça login novamente.");
+      
+      const isConcluido = form.status === "Zerado" || form.status === "Platinado";
+      const dataFinal = isConcluido ? (form.data_zerado || null) : null;
+      const notaFinal = isConcluido && form.nota ? Number(form.nota.replace(",", ".")) : null;
+      const horasFinal = isConcluido && form.horas_jogadas ? Number(form.horas_jogadas.replace(",", ".")) : null;
+      
       const { error } = await supabase.from("jogos").insert({
         user_id: uid,
         nome: form.nome.trim(),
         genero: form.genero || null,
         plataforma: form.plataforma || null,
         status: form.status,
-        ano_jogado: form.ano_jogado ? Number(form.ano_jogado) : null,
-        nota: form.nota ? Number(form.nota.replace(",", ".")) : null,
-        horas_jogadas: form.horas_jogadas ? Number(form.horas_jogadas.replace(",", ".")) : null,
+        data_zerado: dataFinal,
+        ano_jogado: dataFinal ? Number(dataFinal.split("-")[0]) : null,
+        nota: notaFinal,
+        horas_jogadas: horasFinal,
       });
       if (error) throw error;
     },
@@ -77,7 +93,7 @@ export function LogGameModal({ children }: { children: React.ReactNode }) {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>{children}</DialogTrigger>
-      <DialogContent className="sm:max-w-[550px] w-[95vw] overflow-hidden bg-background">
+      <DialogContent className="sm:max-w-[650px] w-[95vw] overflow-hidden bg-background">
         <DialogHeader>
           <DialogTitle>Log Game</DialogTitle>
         </DialogHeader>
@@ -131,6 +147,28 @@ export function LogGameModal({ children }: { children: React.ReactNode }) {
                   }}
                   onFocus={() => setSugestoesAbertas(true)}
                   onBlur={() => window.setTimeout(() => setSugestoesAbertas(false), 150)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && form.nome) return; // allows submitting if game is already picked
+                    if (e.key === "Enter" && !form.nome && busca) {
+                      e.preventDefault();
+                    }
+                    if (!sugestoesAbertas || sugestoes.length === 0) return;
+                    if (e.key === "ArrowDown") {
+                      e.preventDefault();
+                      setFocusedIndex((prev) => (prev < sugestoes.length - 1 ? prev + 1 : prev));
+                    } else if (e.key === "ArrowUp") {
+                      e.preventDefault();
+                      setFocusedIndex((prev) => (prev > 0 ? prev - 1 : prev));
+                    } else if (e.key === "Enter") {
+                      e.preventDefault();
+                      if (focusedIndex >= 0 && focusedIndex < sugestoes.length) {
+                        const s = sugestoes[focusedIndex];
+                        set("nome")(s.nome);
+                        setCapaSelecionada(s.imagem ?? null);
+                        setSugestoesAbertas(false);
+                      }
+                    }
+                  }}
                   placeholder="Buscar jogo"
                   className="bg-surface-2 w-full"
                 />
@@ -139,11 +177,16 @@ export function LogGameModal({ children }: { children: React.ReactNode }) {
                     {buscando && sugestoes.length === 0 ? (
                       <p className="px-2 py-2 text-xs text-muted-foreground">Buscando jogos…</p>
                     ) : null}
-                    {sugestoes.map((s) => (
+                    {sugestoes.map((s, idx) => (
                       <button
                         key={s.id}
                         type="button"
-                        className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-background overflow-hidden"
+                        ref={(el) => {
+                          if (el && focusedIndex === idx) {
+                            el.scrollIntoView({ block: "nearest" });
+                          }
+                        }}
+                        className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm overflow-hidden ${focusedIndex === idx ? "bg-background text-foreground" : "hover:bg-background"}`}
                         onMouseDown={(e) => e.preventDefault()}
                         onClick={() => {
                           set("nome")(s.nome);
@@ -214,38 +257,56 @@ export function LogGameModal({ children }: { children: React.ReactNode }) {
           </div>
 
           <div className="grid grid-cols-3 gap-3">
-            <div className="space-y-1.5">
-              <Label htmlFor="ano">Ano</Label>
-              <Input
-                id="ano"
-                inputMode="numeric"
-                value={form.ano_jogado}
-                onChange={(e) => set("ano_jogado")(e.target.value)}
-                className="bg-surface-2"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="nota">Nota</Label>
-              <Input
-                id="nota"
-                inputMode="decimal"
-                placeholder="0–10"
-                value={form.nota}
-                onChange={(e) => set("nota")(e.target.value)}
-                className="bg-surface-2"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="horas">Horas</Label>
-              <Input
-                id="horas"
-                inputMode="decimal"
-                placeholder="0"
-                value={form.horas_jogadas}
-                onChange={(e) => set("horas_jogadas")(e.target.value)}
-                className="bg-surface-2"
-              />
-            </div>
+            {(form.status === "Zerado" || form.status === "Platinado") && (
+              <div className="space-y-1.5 flex flex-col pt-1">
+                <Label>Data</Label>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className={`justify-start text-left font-normal bg-surface-2 px-3 ${!form.data_zerado ? "text-muted-foreground" : ""}`}
+                    >
+                      <CalendarIcon className="mr-2 h-4 w-4 shrink-0" />
+                      <span className="truncate">{form.data_zerado ? format(new Date(form.data_zerado + "T12:00:00"), "dd/MM/yyyy") : "Selecione"}</span>
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <Calendar
+                      mode="single"
+                      selected={form.data_zerado ? new Date(form.data_zerado + "T12:00:00") : undefined}
+                      onSelect={(d) => set("data_zerado")(d ? format(d, "yyyy-MM-dd") : "")}
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
+              </div>
+            )}
+            {(form.status === "Zerado" || form.status === "Platinado") && (
+              <div className="space-y-1.5">
+                <Label htmlFor="nota">Nota</Label>
+                <Input
+                  id="nota"
+                  inputMode="decimal"
+                  placeholder="0–10"
+                  value={form.nota}
+                  onChange={(e) => set("nota")(e.target.value)}
+                  className="bg-surface-2"
+                />
+              </div>
+            )}
+            {(form.status === "Zerado" || form.status === "Platinado") && (
+              <div className="space-y-1.5">
+                <Label htmlFor="horas">Horas</Label>
+                <Input
+                  id="horas"
+                  inputMode="decimal"
+                  placeholder="0"
+                  value={form.horas_jogadas}
+                  onChange={(e) => set("horas_jogadas")(e.target.value)}
+                  className="bg-surface-2"
+                />
+              </div>
+            )}
           </div>
 
           <div className="mt-4 flex gap-2">

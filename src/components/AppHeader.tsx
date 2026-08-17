@@ -51,17 +51,19 @@ export function AppHeader() {
           Backlog do José
         </Link>
         <nav className="flex items-center gap-1">
+          {logado && (
+            <button
+              type="button"
+              onClick={sair}
+              className="rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+            >
+              Sair
+            </button>
+          )}
           {link("/", "Dashboard")}
           {logado ? (
             <>
               {link("/perfil", "Perfil")}
-              <button
-                type="button"
-                onClick={sair}
-                className="rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
-              >
-                Sair
-              </button>
               <LogGameModal>
                 <button className="ml-2 cursor-pointer rounded-md bg-ember px-3.5 py-1.5 text-sm font-semibold text-white transition-opacity hover:opacity-90">
                   Log Game

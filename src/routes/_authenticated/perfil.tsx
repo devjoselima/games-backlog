@@ -7,6 +7,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { buscarCapas } from "@/lib/game-covers.functions";
 import { Pencil, Check, X } from "lucide-react";
 import { toast } from "sonner";
+import { EditGameModal } from "@/components/EditGameModal";
 
 export const Route = createFileRoute("/_authenticated/perfil")({
   head: () => ({
@@ -224,45 +225,43 @@ function Perfil() {
             pagedGames.map((j) => {
               const capa = retratoDe(j.nome);
               return (
-                <div key={j.id} className="group relative flex flex-col overflow-hidden rounded-xl bg-surface-2 transition-transform hover:-translate-y-1 hover:shadow-xl border border-border/50">
-                  <div className="relative aspect-[3/4] w-full overflow-hidden bg-background">
-                    {capa ? (
-                      <img
-                        src={capa}
-                        alt={j.nome}
-                        loading="lazy"
-                        className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
-                      />
-                    ) : (
-                      <div className="flex h-full w-full items-center justify-center bg-surface px-2 text-center text-xs text-muted-foreground font-semibold">
-                        {j.nome}
-                      </div>
-                    )}
-                    {j.plataforma && (
-                      <div className="absolute right-2 top-2 rounded bg-black/80 px-1.5 py-0.5 text-[10px] font-bold text-white backdrop-blur-sm">
-                        {j.plataforma}
-                      </div>
-                    )}
-                  </div>
-                  <div className="flex flex-1 flex-col p-3">
-                    <h3 className="line-clamp-2 text-sm font-semibold leading-tight text-foreground" title={j.nome}>
-                      {j.nome}
-                    </h3>
-                    
-                    <div className="mt-auto pt-3">
-                      <div className="flex items-center justify-between text-[10px] text-muted-foreground">
-                        <span>Progresso</span>
-                        <span>{j.horas_jogadas ? `${j.horas_jogadas}h` : '--'}</span>
-                      </div>
-                      <div className="mt-1.5 h-1 w-full overflow-hidden rounded-full bg-background">
-                        <div 
-                          className="h-full bg-ember" 
-                          style={{ width: activeTab === 'Zerados' ? '100%' : (j.horas_jogadas ? Math.min(Number(j.horas_jogadas) * 2, 90) + '%' : '10%') }} 
+                <EditGameModal key={j.id} jogo={j} capa={capa}>
+                  <button type="button" className="group relative flex flex-col overflow-hidden rounded-xl bg-surface-2 transition-transform hover:-translate-y-1 hover:shadow-xl border border-border/50 text-left cursor-pointer">
+                    <div className="relative aspect-[3/4] w-full overflow-hidden bg-background">
+                      {capa ? (
+                        <img
+                          src={capa}
+                          alt={j.nome}
+                          loading="lazy"
+                          className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
                         />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center bg-surface px-2 text-center text-xs text-muted-foreground font-semibold">
+                          {j.nome}
+                        </div>
+                      )}
+                      {j.plataforma && (
+                        <div className="absolute right-2 top-2 rounded bg-black/80 px-1.5 py-0.5 text-[10px] font-bold text-white backdrop-blur-sm">
+                          {j.plataforma}
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex flex-1 flex-col p-3">
+                      <h3 className="line-clamp-2 text-sm font-semibold leading-tight text-foreground" title={j.nome}>
+                        {j.nome}
+                      </h3>
+                      
+                      <div className="mt-auto pt-3 flex items-center justify-between">
+                        <span className="text-[11px] font-medium text-muted-foreground">
+                          {j.horas_jogadas ? `${j.horas_jogadas}h jogadas` : ''}
+                        </span>
+                        <span className="text-[11px] font-bold text-amber-500">
+                          {j.nota ? `★ ${j.nota}` : ''}
+                        </span>
                       </div>
                     </div>
-                  </div>
-                </div>
+                  </button>
+                </EditGameModal>
               );
             })
           )}

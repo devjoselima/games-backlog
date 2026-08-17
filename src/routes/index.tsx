@@ -162,9 +162,22 @@ function Dashboard() {
       .sort((a, b) => a[1] - b[1])
       .map(([genero, total]) => ({ genero, total }));
 
-    const ultimo = (arr: Jogo[]) => (arr.length ? arr[arr.length - 1].nome : "—");
+    const ultimo = (arr: Jogo[]) => {
+      if (!arr.length) return "—";
+      const sorted = [...arr].sort((a, b) => {
+        const dA = new Date(a.data_zerado || a.created_at).getTime();
+        const dB = new Date(b.data_zerado || b.created_at).getTime();
+        return dA - dB;
+      });
+      return sorted[sorted.length - 1].nome;
+    };
 
-    const recentes = [...concluidos].reverse().slice(0, 5);
+    const concluidosOrdenados = [...concluidos].sort((a, b) => {
+      const dateA = new Date(a.data_zerado || a.created_at).getTime();
+      const dateB = new Date(b.data_zerado || b.created_at).getTime();
+      return dateB - dateA; // Descending order
+    });
+    const recentes = concluidosOrdenados.slice(0, 5);
 
     return {
       zerados: concluidos.length,
@@ -244,7 +257,7 @@ function Dashboard() {
               </p>
             </div>
             <Link
-              to="/cadastro"
+              to="/perfil"
               className="text-sm font-medium text-primary hover:underline"
             >
               Gerenciar coleção
