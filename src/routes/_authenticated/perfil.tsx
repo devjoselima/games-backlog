@@ -8,6 +8,7 @@ import { buscarCapas } from "@/lib/game-covers.functions";
 import { Pencil, Check, X } from "lucide-react";
 import { toast } from "sonner";
 import { EditGameModal } from "@/components/EditGameModal";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 export const Route = createFileRoute("/_authenticated/perfil")({
   head: () => ({
@@ -44,6 +45,7 @@ function Perfil() {
   const { data: jogos = [] } = useQuery(jogosQuery);
   const [activeTab, setActiveTab] = useState<"Jogando" | "Backlog" | "Zerados">("Jogando");
   const [pagina, setPagina] = useState(1);
+  const [yearFilter, setYearFilter] = useState<string>("All");
   const [userEmail, setUserEmail] = useState("");
   const [userName, setUserName] = useState("");
   
@@ -61,6 +63,7 @@ function Perfil() {
   const mudarAba = (aba: "Jogando" | "Backlog" | "Zerados") => {
     setActiveTab(aba);
     setPagina(1);
+    setYearFilter("All");
   };
 
   const salvarNome = async () => {
@@ -90,9 +93,18 @@ function Perfil() {
   if (activeTab === "Backlog") gamesToShow = backlog;
   if (activeTab === "Zerados") gamesToShow = zerados;
 
+  const availableYears = useMemo(() => {
+    const years = new Set(gamesToShow.map(j => j.ano_jogado).filter(Boolean));
+    return Array.from(years).sort((a, b) => Number(b) - Number(a));
+  }, [gamesToShow]);
+
+  const filteredGames = yearFilter === "All" 
+    ? gamesToShow 
+    : gamesToShow.filter(j => String(j.ano_jogado) === yearFilter);
+
   const itemsPerPage = 10;
-  const totalPages = Math.ceil(gamesToShow.length / itemsPerPage);
-  const pagedGames = gamesToShow.slice((pagina - 1) * itemsPerPage, pagina * itemsPerPage);
+  const totalPages = Math.ceil(filteredGames.length / itemsPerPage);
+  const pagedGames = filteredGames.slice((pagina - 1) * itemsPerPage, pagina * itemsPerPage);
 
   const nomesBusca = useMemo(() => {
     return [...new Set(pagedGames.map((j) => j.nome).filter(Boolean))];
@@ -181,39 +193,57 @@ function Perfil() {
           </div>
         </section>
 
-        {/* Tabs */}
-        <nav className="mb-8 flex gap-6 border-b border-border overflow-x-auto">
-          <button
-            onClick={() => mudarAba("Jogando")}
-            className={`pb-3 whitespace-nowrap text-sm font-semibold transition-colors cursor-pointer ${
-              activeTab === "Jogando"
-                ? "border-b-2 border-ember text-ember"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            🕹️ Jogando Agora
-          </button>
-          <button
-            onClick={() => mudarAba("Backlog")}
-            className={`pb-3 whitespace-nowrap text-sm font-semibold transition-colors cursor-pointer ${
-              activeTab === "Backlog"
-                ? "border-b-2 border-ember text-ember"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            ⌛ Backlog
-          </button>
-          <button
-            onClick={() => mudarAba("Zerados")}
-            className={`pb-3 whitespace-nowrap text-sm font-semibold transition-colors cursor-pointer ${
-              activeTab === "Zerados"
-                ? "border-b-2 border-ember text-ember"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            🏆 Zerados
-          </button>
-        </nav>
+        {/* Tabs and Filters */}
+        <div className="mb-8 flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border">
+          <nav className="flex gap-6 overflow-x-auto">
+            <button
+              onClick={() => mudarAba("Jogando")}
+              className={`pb-3 whitespace-nowrap text-sm font-semibold transition-colors cursor-pointer ${
+                activeTab === "Jogando"
+                  ? "border-b-2 border-ember text-ember"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              🕹️ Jogando Agora
+            </button>
+            <button
+              onClick={() => mudarAba("Backlog")}
+              className={`pb-3 whitespace-nowrap text-sm font-semibold transition-colors cursor-pointer ${
+                activeTab === "Backlog"
+                  ? "border-b-2 border-ember text-ember"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              ⌛ Backlog
+            </button>
+            <button
+              onClick={() => mudarAba("Zerados")}
+              className={`pb-3 whitespace-nowrap text-sm font-semibold transition-colors cursor-pointer ${
+                activeTab === "Zerados"
+                  ? "border-b-2 border-ember text-ember"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              🏆 Zerados
+            </button>
+          </nav>
+
+          {availableYears.length > 0 && (
+            <div className="pb-3 flex items-center shrink-0">
+              <Select value={yearFilter} onValueChange={(val) => { setYearFilter(val); setPagina(1); }}>
+                <SelectTrigger className="w-[140px] bg-surface-2 border-border h-9 text-sm">
+                  <SelectValue placeholder="Ano" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="All">Todos os anos</SelectItem>
+                  {availableYears.map(year => (
+                    <SelectItem key={year} value={String(year)}>{year}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+        </div>
 
         {/* Game Grid */}
         <div className="grid grid-cols-2 gap-6 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
