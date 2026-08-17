@@ -8,6 +8,7 @@ import { Pencil, Check, X } from "lucide-react";
 import { toast } from "sonner";
 import { EditGameModal } from "@/components/EditGameModal";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { buscarJogos } from "@/lib/game-search.functions";
 
 export const Route = createFileRoute("/_authenticated/perfil")({
   head: () => ({
@@ -26,9 +27,10 @@ export const Route = createFileRoute("/_authenticated/perfil")({
 
 function Perfil() {
   const { data: jogos = [] } = useQuery(jogosQuery);
-  const [activeTab, setActiveTab] = useState<"Jogando" | "Backlog" | "Zerados">("Jogando");
+  const [activeTab, setActiveTab] = useState<"Jogando" | "Backlog" | "Zerados" | "Platinados">("Backlog");
   const [pagina, setPagina] = useState(1);
   const [yearFilter, setYearFilter] = useState<string>("All");
+  const [platformFilter, setPlatformFilter] = useState<string>("All");
   const [userEmail, setUserEmail] = useState("");
   const [userName, setUserName] = useState("");
   
@@ -43,10 +45,11 @@ function Perfil() {
     });
   }, []);
 
-  const mudarAba = (aba: "Jogando" | "Backlog" | "Zerados") => {
+  const mudarAba = (aba: "Jogando" | "Backlog" | "Zerados" | "Platinados") => {
     setActiveTab(aba);
     setPagina(1);
     setYearFilter("All");
+    setPlatformFilter("All");
   };
 
   const salvarNome = async () => {
@@ -70,20 +73,31 @@ function Perfil() {
 
   const jogando = jogos.filter((j) => j.status === "Jogando");
   const backlog = jogos.filter((j) => j.status === "Quero jogar" || j.status === "Pausado");
-  const zerados = jogos.filter((j) => j.status === "Zerado");
+  const zerados = jogos.filter((j) => j.status === "Zerado" || j.status === "Platinado");
+  const platinados = jogos.filter((j) => j.status === "Platinado");
 
   let gamesToShow = jogando;
   if (activeTab === "Backlog") gamesToShow = backlog;
   if (activeTab === "Zerados") gamesToShow = zerados;
+  if (activeTab === "Platinados") gamesToShow = platinados;
 
   const availableYears = useMemo(() => {
     const years = new Set(gamesToShow.map(j => j.ano_jogado).filter(Boolean));
     return Array.from(years).sort((a, b) => Number(b) - Number(a));
   }, [gamesToShow]);
 
-  const filteredGames = yearFilter === "All" 
-    ? gamesToShow 
-    : gamesToShow.filter(j => String(j.ano_jogado) === yearFilter);
+  const availablePlatforms = useMemo(() => {
+    const platforms = new Set(gamesToShow.map(j => j.plataforma).filter(Boolean));
+    return Array.from(platforms).sort();
+  }, [gamesToShow]);
+
+  let filteredGames = gamesToShow;
+  if (yearFilter !== "All") {
+    filteredGames = filteredGames.filter(j => String(j.ano_jogado) === yearFilter);
+  }
+  if (platformFilter !== "All") {
+    filteredGames = filteredGames.filter(j => j.plataforma === platformFilter);
+  }
 
   const itemsPerPage = 10;
   const totalPages = Math.ceil(filteredGames.length / itemsPerPage);
@@ -147,18 +161,22 @@ function Perfil() {
               </div>
             )}
 
-            <div className="mt-5 flex gap-4">
-              <div className="flex flex-col items-center justify-center rounded-xl bg-background/50 px-6 py-3 border border-border/50">
-                <span className="text-xl font-bold text-foreground">{jogando.length}</span>
-                <span className="text-xs text-muted-foreground">Jogando</span>
-              </div>
-              <div className="flex flex-col items-center justify-center rounded-xl bg-background/50 px-6 py-3 border border-border/50">
+            <div className="mt-5 flex gap-4 overflow-x-auto pb-2 sm:pb-0">
+              <div className="flex flex-col items-center justify-center rounded-xl bg-background/50 px-5 py-3 border border-border/50 min-w-[80px]">
                 <span className="text-xl font-bold text-foreground">{backlog.length}</span>
                 <span className="text-xs text-muted-foreground">Backlog</span>
               </div>
-              <div className="flex flex-col items-center justify-center rounded-xl bg-background/50 px-6 py-3 border border-border/50">
+              <div className="flex flex-col items-center justify-center rounded-xl bg-background/50 px-5 py-3 border border-border/50 min-w-[80px]">
                 <span className="text-xl font-bold text-foreground">{zerados.length}</span>
                 <span className="text-xs text-muted-foreground">Zerados</span>
+              </div>
+              <div className="flex flex-col items-center justify-center rounded-xl bg-background/50 px-5 py-3 border border-border/50 min-w-[80px]">
+                <span className="text-xl font-bold text-foreground">{platinados.length}</span>
+                <span className="text-xs text-muted-foreground">Platinados</span>
+              </div>
+              <div className="flex flex-col items-center justify-center rounded-xl bg-background/50 px-5 py-3 border border-border/50 min-w-[80px]">
+                <span className="text-xl font-bold text-foreground">{jogando.length}</span>
+                <span className="text-xs text-muted-foreground">Jogando</span>
               </div>
             </div>
           </div>
@@ -167,16 +185,6 @@ function Perfil() {
         {/* Tabs and Filters */}
         <div className="mb-8 flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border">
           <nav className="flex gap-6 overflow-x-auto">
-            <button
-              onClick={() => mudarAba("Jogando")}
-              className={`pb-3 whitespace-nowrap text-sm font-semibold transition-colors cursor-pointer ${
-                activeTab === "Jogando"
-                  ? "border-b-2 border-ember text-ember"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              🕹️ Jogando Agora
-            </button>
             <button
               onClick={() => mudarAba("Backlog")}
               className={`pb-3 whitespace-nowrap text-sm font-semibold transition-colors cursor-pointer ${
@@ -197,23 +205,57 @@ function Perfil() {
             >
               🏆 Zerados
             </button>
+            <button
+              onClick={() => mudarAba("Platinados")}
+              className={`pb-3 whitespace-nowrap text-sm font-semibold transition-colors cursor-pointer ${
+                activeTab === "Platinados"
+                  ? "border-b-2 border-ember text-ember"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              💎 Platinados
+            </button>
+            <button
+              onClick={() => mudarAba("Jogando")}
+              className={`pb-3 whitespace-nowrap text-sm font-semibold transition-colors cursor-pointer ${
+                activeTab === "Jogando"
+                  ? "border-b-2 border-ember text-ember"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              🕹️ Jogando Agora
+            </button>
           </nav>
 
-          {availableYears.length > 0 && (
-            <div className="pb-3 flex items-center shrink-0">
-              <Select value={yearFilter} onValueChange={(val) => { setYearFilter(val); setPagina(1); }}>
+          <div className="flex gap-2 shrink-0 pb-3">
+            {availablePlatforms.length > 0 && (
+              <Select value={platformFilter} onValueChange={(val) => { setPlatformFilter(val); setPagina(1); }}>
                 <SelectTrigger className="w-[140px] bg-surface-2 border-border h-9 text-sm">
+                  <SelectValue placeholder="Plataforma" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="All">Todas</SelectItem>
+                  {availablePlatforms.map(plat => (
+                    <SelectItem key={plat} value={plat as string}>{plat}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+
+            {availableYears.length > 0 && (
+              <Select value={yearFilter} onValueChange={(val) => { setYearFilter(val); setPagina(1); }}>
+                <SelectTrigger className="w-[110px] bg-surface-2 border-border h-9 text-sm">
                   <SelectValue placeholder="Ano" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="All">Todos os anos</SelectItem>
+                  <SelectItem value="All">Todos</SelectItem>
                   {availableYears.map(year => (
                     <SelectItem key={year} value={String(year)}>{year}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-            </div>
-          )}
+            )}
+          </div>
         </div>
 
         {/* Game Grid */}

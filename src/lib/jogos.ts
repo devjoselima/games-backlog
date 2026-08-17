@@ -37,9 +37,8 @@ export async function fetchJogos(): Promise<Jogo[]> {
   const { data, error } = await supabase
     .from("jogos")
     .select("id, nome, genero, plataforma, status, ano_jogado, data_zerado, nota, horas_jogadas, ordem, created_at, imagem")
-    .order("ano_jogado", { ascending: true })
-    .order("ordem", { ascending: true, nullsFirst: false })
-    .order("created_at", { ascending: true });
+    .order("data_zerado", { ascending: false, nullsLast: true })
+    .order("created_at", { ascending: false });
   if (error) throw error;
   return (data ?? []) as Jogo[];
 }

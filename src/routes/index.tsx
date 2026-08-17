@@ -18,6 +18,40 @@ import { AppHeader } from "@/components/AppHeader";
 import { jogosQuery, formatarNota, statusConcluido, type Jogo } from "@/lib/jogos";
 import { useSessaoUsuario } from "@/lib/use-session";
 
+const TRADUCAO_GENEROS: Record<string, string> = {
+  "Role-playing (RPG)": "RPG",
+  "Adventure": "Aventura",
+  "Action": "Ação",
+  "Shooter": "Tiro",
+  "Platform": "Plataforma",
+  "Racing": "Corrida",
+  "Sport": "Esportes",
+  "Strategy": "Estratégia",
+  "Simulation": "Simulação",
+  "Simulator": "Simulação",
+  "Puzzle": "Quebra-cabeça",
+  "Fighting": "Luta",
+  "Point-and-click": "Aponte e Clique",
+  "Tactical": "Tático",
+  "Turn-based strategy (TBS)": "Estratégia em turnos",
+  "Real Time Strategy (RTS)": "Estratégia em tempo real",
+  "Card & Board Game": "Cartas e Tabuleiro",
+  "Music": "Música",
+  "Indie": "Indie",
+  "Arcade": "Arcade",
+  "Hack and slash/Beat 'em up": "Hack & Slash",
+  "Visual Novel": "Visual Novel",
+};
+
+export function traduzirGeneros(generoString: string | null | undefined): string {
+  if (!generoString || !generoString.trim()) return "Outros";
+  return generoString
+    .split(",")
+    .map(g => g.trim())
+    .map(g => TRADUCAO_GENEROS[g] || g)
+    .join(", ");
+}
+
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
@@ -154,8 +188,15 @@ function Dashboard() {
 
     const generoMap = new Map<string, number>();
     jogos.forEach((j) => {
-      const g = j.genero?.trim() || "Outros";
-      generoMap.set(g, (generoMap.get(g) ?? 0) + 1);
+      if (!j.genero || !j.genero.trim()) {
+        generoMap.set("Outros", (generoMap.get("Outros") ?? 0) + 1);
+      } else {
+        const generosArray = j.genero.split(",").map(g => g.trim()).filter(Boolean);
+        generosArray.forEach(g => {
+          const ptBr = TRADUCAO_GENEROS[g] || g;
+          generoMap.set(ptBr, (generoMap.get(ptBr) ?? 0) + 1);
+        });
+      }
     });
     const generos = [...generoMap.entries()]
       .sort((a, b) => a[1] - b[1])
@@ -324,7 +365,7 @@ function Dashboard() {
                       {j.nome}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      {j.plataforma} · {j.genero}
+                      {j.plataforma} · {traduzirGeneros(j.genero)}
                     </p>
                     <div className="flex items-center gap-3 pt-1">
                       <span className="text-xs font-medium text-primary">

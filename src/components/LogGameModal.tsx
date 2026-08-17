@@ -11,7 +11,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { format } from "date-fns";
 import { CalendarIcon } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { GENERO_OPCOES, PLATAFORMA_OPCOES, STATUS_OPCOES } from "@/lib/jogos";
+import { PLATAFORMA_OPCOES, STATUS_OPCOES } from "@/lib/jogos";
 import { buscarJogos } from "@/lib/game-search.functions";
 import { useNavigate } from "@tanstack/react-router";
 
@@ -165,6 +165,7 @@ export function LogGameModal({ children }: { children: React.ReactNode }) {
                       if (focusedIndex >= 0 && focusedIndex < sugestoes.length) {
                         const s = sugestoes[focusedIndex];
                         set("nome")(s.nome);
+                        set("genero")(s.genero || "");
                         setCapaSelecionada(s.imagem ?? null);
                         setSugestoesAbertas(false);
                       }
@@ -191,6 +192,7 @@ export function LogGameModal({ children }: { children: React.ReactNode }) {
                         onMouseDown={(e) => e.preventDefault()}
                         onClick={() => {
                           set("nome")(s.nome);
+                          set("genero")(s.genero || "");
                           setCapaSelecionada(s.imagem ?? null);
                           setSugestoesAbertas(false);
                         }}
@@ -214,19 +216,6 @@ export function LogGameModal({ children }: { children: React.ReactNode }) {
             )}
           </div>
 
-          <div className="space-y-1.5">
-            <Label>Gênero</Label>
-            <Select value={form.genero} onValueChange={set("genero")}>
-              <SelectTrigger className="bg-surface-2">
-                <SelectValue placeholder="Selecione" />
-              </SelectTrigger>
-              <SelectContent>
-                {GENERO_OPCOES.map((g) => (
-                  <SelectItem key={g} value={g}>{g}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">

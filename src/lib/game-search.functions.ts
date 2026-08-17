@@ -5,6 +5,7 @@ export type SugestaoJogo = {
   id: string;
   nome: string;
   imagem: string | null;
+  genero: string | null;
 };
 
 export const buscarJogos = createServerFn({ method: "GET" })
@@ -17,9 +18,9 @@ export const buscarJogos = createServerFn({ method: "GET" })
 
     try {
       const termoEscapado = termo.replace(/"/g, '');
-      const body = `search "${termoEscapado}"; fields name, cover.image_id; limit 8;`;
+      const body = `search "${termoEscapado}"; fields name, cover.image_id, genres.name; limit 15;`;
       
-      const resultados = await igdbQuery<{ id: number; name: string; cover?: { id: number; image_id: string } }>(
+      const resultados = await igdbQuery<{ id: number; name: string; cover?: { id: number; image_id: string }; genres?: { id: number; name: string }[] }>(
         "games",
         body
       );
@@ -30,8 +31,10 @@ export const buscarJogos = createServerFn({ method: "GET" })
         id: String(j.id),
         nome: j.name,
         imagem: j.cover?.image_id ? imagemIgdb(j.cover.image_id, "cover_big") : null,
+        genero: j.genres && j.genres.length > 0 ? j.genres.map(g => g.name).join(", ") : null,
       }));
     } catch {
       return [];
     }
   });
+
