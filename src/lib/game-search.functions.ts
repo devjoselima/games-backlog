@@ -1,18 +1,18 @@
 import { createServerFn } from "@tanstack/react-start";
 import { igdbQuery, imagemIgdb } from "./igdb.server";
 
-export type SugestaoJogo = {
+export type GameSuggestion = {
   id: string;
   nome: string;
   imagem: string | null;
   genero: string | null;
 };
 
-export const buscarJogos = createServerFn({ method: "GET" })
+export const searchGames = createServerFn({ method: "GET" })
   .inputValidator((input: { termo: string }) => ({
     termo: String(input?.termo ?? "").slice(0, 80),
   }))
-  .handler(async ({ data }): Promise<SugestaoJogo[]> => {
+  .handler(async ({ data }): Promise<GameSuggestion[]> => {
     const termo = data.termo.trim();
     if (termo.length < 2) return [];
 

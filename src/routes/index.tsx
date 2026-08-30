@@ -15,10 +15,10 @@ import {
 import { Trophy, CheckCircle2, CalendarDays, Clock } from "lucide-react";
 
 import { AppHeader } from "@/components/AppHeader";
-import { jogosQuery, formatarNota, statusConcluido, type Jogo } from "@/lib/jogos";
+import { gamesQuery, formatRating, isCompletedStatus, type Game } from "@/lib/games";
 import { useSessaoUsuario } from "@/lib/use-session";
 
-const TRADUCAO_GENEROS: Record<string, string> = {
+const GENRE_TRANSLATIONS: Record<string, string> = {
   "Role-playing (RPG)": "RPG",
   "Adventure": "Aventura",
   "Action": "Ação",
@@ -43,29 +43,29 @@ const TRADUCAO_GENEROS: Record<string, string> = {
   "Visual Novel": "Visual Novel",
 };
 
-export function traduzirGeneros(generoString: string | null | undefined): string {
+export function translateGenres(generoString: string | null | undefined): string {
   if (!generoString || !generoString.trim()) return "Outros";
   return generoString
     .split(",")
     .map(g => g.trim())
-    .map(g => TRADUCAO_GENEROS[g] || g)
+    .map(g => GENRE_TRANSLATIONS[g] || g)
     .join(", ");
 }
 
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Backlog do José | Jogos zerados e platinados" },
+      { title: "Backlog do José | Jogos completed e platinum" },
       {
         name: "description",
         content:
-          "Dashboard pessoal de jogos zerados e platinados: últimos jogos jogados, notas, gêneros e estatísticas por ano.",
+          "Dashboard pessoal de games completed e platinum: últimos games jogados, notas, gêneros e estatísticas por ano.",
       },
-      { property: "og:title", content: "Backlog do José | Jogos zerados e platinados" },
+      { property: "og:title", content: "Backlog do José | Jogos completed e platinum" },
       {
         property: "og:description",
         content:
-          "Últimos jogos jogados, contadores de zerados e platinados, notas e gráficos por ano e gênero.",
+          "Últimos games jogados, contadores de completed e platinum, notas e gráficos por ano e gênero.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
@@ -74,7 +74,7 @@ export const Route = createFileRoute("/")({
   component: Dashboard,
 });
 
-const anoAtual = () => new Date().getFullYear();
+const currentYear = () => new Date().getFullYear();
 
 function Stat({
   titulo,
@@ -161,48 +161,48 @@ const tooltipStyle = {
 
 function Dashboard() {
   const userId = useSessaoUsuario();
-  const { data: jogos = [], isLoading, error } = useQuery({
-    ...jogosQuery,
+  const { data: games = [], isLoading, error } = useQuery({
+    ...gamesQuery,
     enabled: !!userId,
   });
 
   const stats = useMemo(() => {
-    const concluidos = jogos.filter((j) => statusConcluido(j.status));
-    const platinados = jogos.filter((j) => j.status === "Platinado");
-    const esteAno = concluidos.filter((j) => j.ano_jogado === anoAtual());
-    const horasAno = jogos
-      .filter((j) => j.ano_jogado === anoAtual() && j.horas_jogadas)
+    const completedList = games.filter((j) => isCompletedStatus(j.status));
+    const platinum = games.filter((j) => j.status === "Platinado");
+    const thisYear = completedList.filter((j) => j.ano_jogado === currentYear());
+    const hoursYear = games
+      .filter((j) => j.ano_jogado === currentYear() && j.horas_jogadas)
       .map((j) => Number(j.horas_jogadas));
-    const media = horasAno.length
-      ? horasAno.reduce((a, b) => a + b, 0) / horasAno.length
+    const average = hoursYear.length
+      ? hoursYear.reduce((a, b) => a + b, 0) / hoursYear.length
       : 0;
 
-    const porAnoMap = new Map<number, number>();
-    concluidos.forEach((j) => {
+    const byYearMap = new Map<number, number>();
+    completedList.forEach((j) => {
       if (!j.ano_jogado) return;
-      porAnoMap.set(j.ano_jogado, (porAnoMap.get(j.ano_jogado) ?? 0) + 1);
+      byYearMap.set(j.ano_jogado, (byYearMap.get(j.ano_jogado) ?? 0) + 1);
     });
-    const porAno = [...porAnoMap.entries()]
+    const byYear = [...byYearMap.entries()]
       .sort((a, b) => a[0] - b[0])
       .map(([ano, total]) => ({ ano: String(ano), total }));
 
-    const generoMap = new Map<string, number>();
-    jogos.forEach((j) => {
+    const genreMap = new Map<string, number>();
+    games.forEach((j) => {
       if (!j.genero || !j.genero.trim()) {
-        generoMap.set("Outros", (generoMap.get("Outros") ?? 0) + 1);
+        genreMap.set("Outros", (genreMap.get("Outros") ?? 0) + 1);
       } else {
         const generosArray = j.genero.split(",").map(g => g.trim()).filter(Boolean);
         generosArray.forEach(g => {
-          const ptBr = TRADUCAO_GENEROS[g] || g;
-          generoMap.set(ptBr, (generoMap.get(ptBr) ?? 0) + 1);
+          const ptBr = GENRE_TRANSLATIONS[g] || g;
+          genreMap.set(ptBr, (genreMap.get(ptBr) ?? 0) + 1);
         });
       }
     });
-    const generos = [...generoMap.entries()]
+    const genresList = [...genreMap.entries()]
       .sort((a, b) => a[1] - b[1])
       .map(([genero, total]) => ({ genero, total }));
 
-    const ultimo = (arr: Jogo[]) => {
+    const lastItem = (arr: Game[]) => {
       if (!arr.length) return "—";
       const sorted = [...arr].sort((a, b) => {
         const dA = new Date(a.data_zerado || a.created_at).getTime();
@@ -212,29 +212,29 @@ function Dashboard() {
       return sorted[sorted.length - 1].nome;
     };
 
-    const concluidosOrdenados = [...concluidos].sort((a, b) => {
+    const sortedCompleted = [...completedList].sort((a, b) => {
       const dateA = new Date(a.data_zerado || a.created_at).getTime();
       const dateB = new Date(b.data_zerado || b.created_at).getTime();
       return dateB - dateA; // Descending order
     });
-    const recentes = concluidosOrdenados.slice(0, 5);
+    const recentItems = sortedCompleted.slice(0, 5);
 
     return {
-      zerados: concluidos.length,
-      platinados: platinados.length,
-      esteAno: esteAno.length,
-      media,
-      porAno,
-      generos,
-      recentes,
-      ultimoZerado: ultimo(concluidos.filter((j) => j.status === "Zerado")),
-      ultimoPlatinado: ultimo(platinados),
-      jogandoAgora: jogos.filter((j) => j.status === "Jogando"),
+      completed: completedList.length,
+      platinum: platinum.length,
+      thisYear: thisYear.length,
+      average,
+      byYear,
+      genresList,
+      recentItems,
+      lastCompleted: lastItem(completedList.filter((j) => j.status === "Zerado")),
+      lastPlatinum: lastItem(platinum),
+      playingNow: games.filter((j) => j.status === "Jogando"),
     };
-  }, [jogos]);
+  }, [games]);
 
-  const retratoDe = (imagemFixa: string | null) => {
-    return imagemFixa ?? null;
+  const getPortrait = (fixedImage: string | null) => {
+    return fixedImage ?? null;
   };
 
 
@@ -243,9 +243,9 @@ function Dashboard() {
       <div className="min-h-screen bg-background">
         <AppHeader />
         <main className="mx-auto flex max-w-md flex-col items-center gap-4 px-5 py-24 text-center">
-          <h1 className="font-display text-2xl font-semibold">Sua coleção de jogos</h1>
+          <h1 className="font-display text-2xl font-semibold">Sua coleção de games</h1>
           <p className="text-sm text-muted-foreground">
-            Entre na sua conta para ver e gerenciar os jogos que você cadastrou.
+            Entre na sua conta para ver e gerenciar os games que você cadastrou.
           </p>
           <Link
             to="/auth"
@@ -265,7 +265,7 @@ function Dashboard() {
       <main className="mx-auto max-w-6xl space-y-8 px-5 py-8">
         {error ? (
           <p className="text-sm text-destructive">
-            Não foi possível carregar os jogos. Recarregue a página.
+            Não foi possível carregar os games. Recarregue a página.
           </p>
         ) : null}
 
@@ -277,11 +277,11 @@ function Dashboard() {
                 Bem-vindo de volta, José
               </h1>
               <p className="text-sm text-muted-foreground">
-                Seus últimos 5 jogos jogados
+                Seus últimos 5 games jogados
               </p>
             </div>
             <Link
-              to="/perfil"
+              to="/profile"
               className="text-sm font-medium text-primary hover:underline"
             >
               Gerenciar coleção
@@ -290,12 +290,12 @@ function Dashboard() {
 
           {isLoading ? (
             <p className="text-sm text-muted-foreground">Carregando…</p>
-          ) : stats.recentes.length === 0 ? (
+          ) : stats.recentItems.length === 0 ? (
             <p className="text-sm text-muted-foreground">Nenhum jogo concluído ainda.</p>
           ) : (
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-5">
-              {stats.recentes.map((j) => {
-                const capa = retratoDe(j.imagem);
+              {stats.recentItems.map((j) => {
+                const capa = getPortrait(j.imagem);
                 return (
                   <article
                     key={j.id}
@@ -327,7 +327,7 @@ function Dashboard() {
                       <p className="flex items-center justify-between text-xs text-muted-foreground">
                         <span>{j.ano_jogado ?? "—"}</span>
                         <span className="font-semibold text-primary">
-                          {formatarNota(j.nota)}
+                          {formatRating(j.nota)}
                         </span>
                       </p>
                     </div>
@@ -340,36 +340,36 @@ function Dashboard() {
 
         {/* Contadores */}
         <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-          <Stat titulo="Zerados" valor={stats.zerados} Icon={CheckCircle2} />
-          <Stat titulo="Este ano" valor={stats.esteAno} Icon={CalendarDays} />
-          <Stat titulo="Platinados" valor={stats.platinados} Icon={Trophy} />
+          <Stat titulo="Zerados" valor={stats.completed} Icon={CheckCircle2} />
+          <Stat titulo="Este ano" valor={stats.thisYear} Icon={CalendarDays} />
+          <Stat titulo="Platinados" valor={stats.platinum} Icon={Trophy} />
           <Stat
-            titulo={`Média ${anoAtual()}`}
-            valor={`${stats.media.toFixed(1).replace(".", ",")}h`}
+            titulo={`Média ${currentYear()}`}
+            valor={`${stats.average.toFixed(1).replace(".", ",")}h`}
             Icon={Clock}
           />
         </div>
 
         {/* Jogando agora */}
         <Card titulo="Jogando agora">
-          {stats.jogandoAgora.length ? (
+          {stats.playingNow.length ? (
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {stats.jogandoAgora.map((j) => (
+              {stats.playingNow.map((j) => (
                 <article
                   key={j.id}
                   className="group flex items-center gap-4 rounded-xl border border-border bg-surface p-3 transition-all duration-300 hover:-translate-y-1 hover:border-primary/50 hover:shadow-lg"
                 >
-                  <Retrato nome={j.nome} src={retratoDe(j.imagem)} tamanho={120} />
+                  <Retrato nome={j.nome} src={getPortrait(j.imagem)} tamanho={120} />
                   <div className="min-w-0 flex-1 space-y-1">
                     <p className="truncate font-display text-sm font-semibold" title={j.nome}>
                       {j.nome}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      {j.plataforma} · {traduzirGeneros(j.genero)}
+                      {j.plataforma} · {translateGenres(j.genero)}
                     </p>
                     <div className="flex items-center gap-3 pt-1">
                       <span className="text-xs font-medium text-primary">
-                        {formatarNota(j.nota)}
+                        {formatRating(j.nota)}
                       </span>
                       {j.horas_jogadas ? (
                         <span className="text-xs text-muted-foreground">
@@ -392,7 +392,7 @@ function Dashboard() {
           <Card titulo="Zerados por ano">
             <div className="h-[260px]">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={stats.porAno} margin={{ top: 16, right: 8, left: -20, bottom: 0 }}>
+                <BarChart data={stats.byYear} margin={{ top: 16, right: 8, left: -20, bottom: 0 }}>
                   <CartesianGrid vertical={false} stroke="var(--border)" />
                   <XAxis
                     dataKey="ano"
@@ -420,10 +420,10 @@ function Dashboard() {
           </Card>
 
           <Card titulo="Jogos por gênero">
-            <div style={{ height: Math.max(260, stats.generos.length * 28) }}>
+            <div style={{ height: Math.max(260, stats.genresList.length * 28) }}>
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart
-                  data={stats.generos}
+                  data={stats.genresList}
                   layout="vertical"
                   margin={{ top: 4, right: 28, left: 8, bottom: 0 }}
                 >
@@ -446,7 +446,7 @@ function Dashboard() {
                   />
                   <Tooltip cursor={{ fill: "var(--surface-2)" }} contentStyle={tooltipStyle} />
                   <Bar dataKey="total" radius={[0, 4, 4, 0]} barSize={14}>
-                    {stats.generos.map((g) => (
+                    {stats.genresList.map((g) => (
                       <Cell key={g.genero} fill="var(--chart-2)" />
                     ))}
                     <LabelList

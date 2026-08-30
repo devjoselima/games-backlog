@@ -11,8 +11,8 @@ import { Calendar } from "@/components/ui/calendar";
 import { format } from "date-fns";
 import { CalendarIcon } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { PLATAFORMA_OPCOES, STATUS_OPCOES } from "@/lib/jogos";
-import { buscarJogos } from "@/lib/game-search.functions";
+import { PLATFORM_OPTIONS, STATUS_OPTIONS, gamesQuery } from "@/lib/games";
+import { searchGames } from "@/lib/game-search.functions";
 import { useNavigate } from "@tanstack/react-router";
 
 const vazio = {
@@ -28,33 +28,38 @@ const vazio = {
 export function LogGameModal({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(vazio);
-  const [sugestoesAbertas, setSugestoesAbertas] = useState(false);
-  const [busca, setBusca] = useState("");
-  const [capaSelecionada, setCapaSelecionada] = useState<string | null>(null);
-  const [termoBusca, setTermoBusca] = useState("");
+  const [suggestionsOpen, setSugestoesAbertas] = useState(false);
+  const [search, setBusca] = useState("");
+  const [selectedCover, setCapaSelecionada] = useState<string | null>(null);
+  const [searchTerm, setTermoBusca] = useState("");
   const [focusedIndex, setFocusedIndex] = useState(-1);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const { data: games = [] } = useQuery(gamesQuery);
+
+  const duplicatedGame = form.nome
+    ? games.find(g => g.nome.toLowerCase() === form.nome.toLowerCase().trim())
+    : null;
 
   useEffect(() => {
-    const t = window.setTimeout(() => setTermoBusca(busca.trim()), 500);
+    const t = window.setTimeout(() => setTermoBusca(search.trim()), 500);
     return () => window.clearTimeout(t);
-  }, [busca]);
+  }, [search]);
 
-  const { data: sugestoes = [], isFetching: buscando } = useQuery({
-    queryKey: ["busca-jogos", termoBusca],
-    queryFn: () => buscarJogos({ data: { termo: termoBusca } }),
-    enabled: termoBusca.length >= 2,
+  const { data: suggestions = [], isFetching: isSearching } = useQuery({
+    queryKey: ["search-games", searchTerm],
+    queryFn: () => searchGames({ data: { termo: searchTerm } }),
+    enabled: searchTerm.length >= 2,
     staleTime: 5 * 60 * 1000,
   });
 
   useEffect(() => {
     setFocusedIndex(-1);
-  }, [sugestoes, busca]);
+  }, [suggestions, search]);
 
   const set = (k: keyof typeof vazio) => (v: string) => setForm((f) => ({ ...f, [k]: v }));
 
-  const criar = useMutation({
+  const createMutation = useMutation({
     mutationFn: async () => {
       const { data: sessao } = await supabase.auth.getUser();
       const uid = sessao.user?.id;
@@ -75,18 +80,18 @@ export function LogGameModal({ children }: { children: React.ReactNode }) {
           ano_jogado: dataFinal ? Number(dataFinal.split("-")[0]) : null,
           nota: notaFinal,
           horas_jogadas: horasFinal,
-          imagem: capaSelecionada,
+          imagem: selectedCover,
         });
         if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["jogos"] });
-      toast.success("Jogo cadastrado!");
+      queryClient.invalidateQueries({ queryKey: ["games"] });
+      toast.success("Game cadastrado!");
       setForm({ ...vazio });
       setBusca("");
       setCapaSelecionada(null);
       setOpen(false);
-      navigate({ to: "/perfil" });
+      navigate({ to: "/profile" });
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -106,16 +111,16 @@ export function LogGameModal({ children }: { children: React.ReactNode }) {
               toast.error("Selecione um jogo na lista");
               return;
             }
-            criar.mutate();
+            createMutation.mutate();
           }}
         >
           <div className="space-y-1.5 w-full">
             <Label htmlFor="nome">Nome do jogo</Label>
             {form.nome ? (
               <div className="flex items-center gap-2 rounded-md bg-surface-2 p-2 w-full overflow-hidden">
-                {capaSelecionada ? (
+                {selectedCover ? (
                   <img
-                    src={capaSelecionada}
+                    src={selectedCover}
                     alt={form.nome}
                     className="h-8 w-[74px] shrink-0 rounded object-cover"
                   />
@@ -141,7 +146,7 @@ export function LogGameModal({ children }: { children: React.ReactNode }) {
                 <Input
                   id="nome"
                   autoComplete="off"
-                  value={busca}
+                  value={search}
                   onChange={(e) => {
                     setBusca(e.target.value);
                     setSugestoesAbertas(true);
@@ -150,20 +155,20 @@ export function LogGameModal({ children }: { children: React.ReactNode }) {
                   onBlur={() => window.setTimeout(() => setSugestoesAbertas(false), 150)}
                   onKeyDown={(e) => {
                     if (e.key === "Enter" && form.nome) return; // allows submitting if game is already picked
-                    if (e.key === "Enter" && !form.nome && busca) {
+                    if (e.key === "Enter" && !form.nome && search) {
                       e.preventDefault();
                     }
-                    if (!sugestoesAbertas || sugestoes.length === 0) return;
+                    if (!suggestionsOpen || suggestions.length === 0) return;
                     if (e.key === "ArrowDown") {
                       e.preventDefault();
-                      setFocusedIndex((prev) => (prev < sugestoes.length - 1 ? prev + 1 : prev));
+                      setFocusedIndex((prev) => (prev < suggestions.length - 1 ? prev + 1 : prev));
                     } else if (e.key === "ArrowUp") {
                       e.preventDefault();
                       setFocusedIndex((prev) => (prev > 0 ? prev - 1 : prev));
                     } else if (e.key === "Enter") {
                       e.preventDefault();
-                      if (focusedIndex >= 0 && focusedIndex < sugestoes.length) {
-                        const s = sugestoes[focusedIndex];
+                      if (focusedIndex >= 0 && focusedIndex < suggestions.length) {
+                        const s = suggestions[focusedIndex];
                         set("nome")(s.nome);
                         set("genero")(s.genero || "");
                         setCapaSelecionada(s.imagem ?? null);
@@ -174,12 +179,12 @@ export function LogGameModal({ children }: { children: React.ReactNode }) {
                   placeholder="Buscar jogo"
                   className="bg-surface-2 w-full"
                 />
-                {sugestoesAbertas && (buscando || sugestoes.length > 0) ? (
+                {suggestionsOpen && (isSearching || suggestions.length > 0) ? (
                   <div className="absolute z-50 mt-1 max-h-72 w-full overflow-y-auto overflow-x-hidden rounded-md border border-border bg-surface-2 p-1 shadow-lg">
-                    {buscando && sugestoes.length === 0 ? (
-                      <p className="px-2 py-2 text-xs text-muted-foreground">Buscando jogos…</p>
+                    {isSearching && suggestions.length === 0 ? (
+                      <p className="px-2 py-2 text-xs text-muted-foreground">Buscando games…</p>
                     ) : null}
-                    {sugestoes.map((s, idx) => (
+                    {suggestions.map((s, idx) => (
                       <button
                         key={s.id}
                         type="button"
@@ -216,8 +221,13 @@ export function LogGameModal({ children }: { children: React.ReactNode }) {
             )}
           </div>
 
+          {duplicatedGame && (
+            <div className="rounded-md border border-amber-500/50 bg-amber-500/10 px-3 py-2 text-sm text-amber-500 mt-2">
+              Aviso: Você já tem <strong>{duplicatedGame.nome}</strong> cadastrado no status "<strong>{duplicatedGame.status}</strong>".
+            </div>
+          )}
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 gap-3 mt-2">
             <div className="space-y-1.5">
               <Label>Plataforma</Label>
               <Select value={form.plataforma} onValueChange={set("plataforma")}>
@@ -225,7 +235,7 @@ export function LogGameModal({ children }: { children: React.ReactNode }) {
                   <SelectValue placeholder="Selecione" />
                 </SelectTrigger>
                 <SelectContent>
-                  {PLATAFORMA_OPCOES.map((p) => (
+                  {PLATFORM_OPTIONS.map((p) => (
                     <SelectItem key={p} value={p}>{p}</SelectItem>
                   ))}
                 </SelectContent>
@@ -238,7 +248,7 @@ export function LogGameModal({ children }: { children: React.ReactNode }) {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {STATUS_OPCOES.map((s) => (
+                  {STATUS_OPTIONS.map((s) => (
                     <SelectItem key={s} value={s}>{s}</SelectItem>
                   ))}
                 </SelectContent>
@@ -300,8 +310,8 @@ export function LogGameModal({ children }: { children: React.ReactNode }) {
           </div>
 
           <div className="mt-4 flex gap-2">
-            <Button type="submit" className="w-full" disabled={criar.isPending}>
-              {criar.isPending ? "Salvando…" : "Salvar Log"}
+            <Button type="submit" className="w-full" disabled={createMutation.isPending}>
+              {createMutation.isPending ? "Salvando…" : "Salvar Log"}
             </Button>
           </div>
         </form>

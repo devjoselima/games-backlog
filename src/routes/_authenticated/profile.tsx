@@ -1,34 +1,37 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, useEffect, useMemo } from "react";
 import { AppHeader } from "@/components/AppHeader";
-import { jogosQuery, formatarNota } from "@/lib/jogos";
+import { gamesQuery, formatRating } from "@/lib/games";
 import { supabase } from "@/integrations/supabase/client";
 import { Pencil, Check, X, Trophy } from "lucide-react";
 import { toast } from "sonner";
 import { EditGameModal } from "@/components/EditGameModal";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { buscarJogos } from "@/lib/game-search.functions";
+import { syncSteamLibrary } from "@/lib/steam.server";
+import { searchGames } from "@/lib/game-search.functions";
+import { SteamSyncModal, type SyncResultDisplay } from "@/components/SteamSyncModal";
 
-export const Route = createFileRoute("/_authenticated/perfil")({
+export const Route = createFileRoute("/_authenticated/profile")({
   head: () => ({
     meta: [
       { title: "Perfil | Planilha de Jogos Zerados" },
-      { name: "description", content: "Seu perfil e backlog de jogos." },
+      { name: "description", content: "Seu perfil e backlog de games." },
     ],
   }),
   loader: async ({ context: { queryClient } }) => {
-    // 1. Puxar todos os jogos primeiro
-    await queryClient.ensureQueryData(jogosQuery);
+    // 1. Puxar todos os games primeiro
+    await queryClient.ensureQueryData(gamesQuery);
     return null;
   },
   component: Perfil,
 });
 
 function Perfil() {
-  const { data: jogos = [] } = useQuery(jogosQuery);
+  const queryClient = useQueryClient();
+  const { data: games = [] } = useQuery(gamesQuery);
   const [activeTab, setActiveTab] = useState<"Jogando" | "Backlog" | "Zerados" | "Platinados">("Backlog");
-  const [pagina, setPagina] = useState(1);
+  const [page, setPage] = useState(1);
   const [yearFilter, setYearFilter] = useState<string>("All");
   const [platformFilter, setPlatformFilter] = useState<string>("All");
   const [textFilter, setTextFilter] = useState<string>("");
@@ -46,26 +49,26 @@ function Perfil() {
     });
   }, []);
 
-  const mudarAba = (aba: "Jogando" | "Backlog" | "Zerados" | "Platinados") => {
-    setActiveTab(aba);
-    setPagina(1);
+  const changeTab = (tab: "Jogando" | "Backlog" | "Zerados" | "Platinados") => {
+    setActiveTab(tab);
+    setPage(1);
     setYearFilter("All");
     setPlatformFilter("All");
     setTextFilter("");
   };
 
-  const salvarNome = async () => {
-    const novoNome = editNameValue.trim();
-    if (!novoNome) {
+  const saveName = async () => {
+    const newName = editNameValue.trim();
+    if (!newName) {
       toast.error("O nome não pode ser vazio.");
       return;
     }
     try {
       const { error } = await supabase.auth.updateUser({
-        data: { name: novoNome }
+        data: { name: newName }
       });
       if (error) throw error;
-      setUserName(novoNome);
+      setUserName(newName);
       setIsEditingName(false);
       toast.success("Nome atualizado com sucesso!");
     } catch (err: any) {
@@ -73,15 +76,15 @@ function Perfil() {
     }
   };
 
-  const jogando = jogos.filter((j) => j.status === "Jogando");
-  const backlog = jogos.filter((j) => j.status === "Quero jogar" || j.status === "Pausado");
-  const zerados = jogos.filter((j) => j.status === "Zerado" || j.status === "Platinado");
-  const platinados = jogos.filter((j) => j.status === "Platinado");
+  const playing = games.filter((j) => j.status === "Jogando");
+  const backlog = games.filter((j) => j.status === "Quero jogar" || j.status === "Pausado");
+  const completed = games.filter((j) => j.status === "Zerado" || j.status === "Platinado");
+  const platinum = games.filter((j) => j.status === "Platinado");
 
-  let gamesToShow = jogando;
+  let gamesToShow = playing;
   if (activeTab === "Backlog") gamesToShow = backlog;
-  if (activeTab === "Zerados") gamesToShow = zerados;
-  if (activeTab === "Platinados") gamesToShow = platinados;
+  if (activeTab === "Zerados") gamesToShow = completed;
+  if (activeTab === "Platinados") gamesToShow = platinum;
 
   const availableYears = useMemo(() => {
     const years = new Set(gamesToShow.map(j => j.ano_jogado).filter(Boolean));
@@ -107,10 +110,85 @@ function Perfil() {
 
   const itemsPerPage = 10;
   const totalPages = Math.ceil(filteredGames.length / itemsPerPage);
-  const pagedGames = filteredGames.slice((pagina - 1) * itemsPerPage, pagina * itemsPerPage);
+  const pagedGames = filteredGames.slice((page - 1) * itemsPerPage, page * itemsPerPage);
 
-  const retratoDe = (imagemFixa: string | null) => {
-    return imagemFixa ?? null;
+  const [isSyncingSteam, setIsSyncingSteam] = useState(false);
+  const [syncResults, setSyncResults] = useState<SyncResultDisplay[] | null>(null);
+
+  const handleSteamSync = async (steamId: string) => {
+    if (!/^\d{17}$/.test(steamId)) {
+      toast.error("Steam ID inválido. Ele deve conter exatamente 17 números.");
+      return;
+    }
+
+    setIsSyncingSteam(true);
+    const toastId = toast.loading("Buscando jogos na Steam...");
+
+    try {
+      const steamGamesInput = games
+        .filter(g => g.plataforma === "Steam")
+        .map(g => ({ id: g.id, nome: g.nome, status: g.status, horas_jogadas: g.horas_jogadas }));
+
+      if (steamGamesInput.length === 0) {
+        toast.dismiss(toastId);
+        toast.info("Você não tem nenhum jogo cadastrado com a plataforma 'Steam' no seu backlog.");
+        setIsSyncingSteam(false);
+        return;
+      }
+
+      const updates = await syncSteamLibrary({ data: { steamId, localGames: steamGamesInput } });
+
+      if (updates.length === 0) {
+        toast.dismiss(toastId);
+        toast.success("Nenhum jogo novo para sincronizar ou nenhum match encontrado.");
+        setIsSyncingSteam(false);
+        return;
+      }
+
+      const displayResults: SyncResultDisplay[] = updates.map(update => {
+        const payload: any = {};
+        if (update.horas_jogadas !== undefined) payload.horas_jogadas = update.horas_jogadas;
+        if (update.status !== undefined) payload.status = update.status;
+        
+        return {
+          id: update.id,
+          localName: steamGamesInput.find(g => g.id === update.id)?.nome || "Desconhecido",
+          steamName: update.steamName || "Match Steam",
+          horas: update.horas_jogadas || 0,
+          platinou: update.status === "Platinado" || payload.status === "Platinado",
+          status: payload.status,
+        };
+      });
+
+      setSyncResults(displayResults);
+      toast.dismiss(toastId);
+    } catch (err: any) {
+      toast.error("Erro na sincronização: " + err.message, { id: toastId });
+    } finally {
+      setIsSyncingSteam(false);
+    }
+  };
+
+  const handleConfirmSync = async (confirmedResults: SyncResultDisplay[]) => {
+    const toastId = toast.loading(`Salvando ${confirmedResults.length} jogos...`);
+    let count = 0;
+    try {
+      for (const res of confirmedResults) {
+        const payload: any = { horas_jogadas: res.horas };
+        if (res.status) payload.status = res.status;
+        await supabase.from("jogos").update(payload).eq("id", res.id);
+        count++;
+      }
+      toast.success(`${count} jogos sincronizados com sucesso!`, { id: toastId });
+      queryClient.invalidateQueries({ queryKey: ["games"] });
+    } catch (err: any) {
+      toast.error("Erro ao salvar: " + err.message, { id: toastId });
+    }
+    setSyncResults(null);
+  };
+
+  const getPortrait = (fixedImage: string | null) => {
+    return fixedImage ?? null;
   };
 
   const username = userEmail.split("@")[0];
@@ -140,11 +218,11 @@ function Perfil() {
                   className="font-display text-2xl font-bold bg-background border border-border rounded-md px-3 py-1 text-foreground focus:outline-none focus:ring-2 focus:ring-ember"
                   autoFocus
                   onKeyDown={(e) => {
-                    if (e.key === "Enter") salvarNome();
+                    if (e.key === "Enter") saveName();
                     if (e.key === "Escape") setIsEditingName(false);
                   }}
                 />
-                <button onClick={salvarNome} className="p-2 text-green-500 hover:bg-green-500/10 rounded-md transition-colors" title="Salvar">
+                <button onClick={saveName} className="p-2 text-green-500 hover:bg-green-500/10 rounded-md transition-colors" title="Salvar">
                   <Check className="w-5 h-5" />
                 </button>
                 <button onClick={() => setIsEditingName(false)} className="p-2 text-muted-foreground hover:bg-surface rounded-md transition-colors" title="Cancelar">
@@ -173,15 +251,15 @@ function Perfil() {
                 <span className="text-xs text-muted-foreground">Backlog</span>
               </div>
               <div className="flex flex-col items-center justify-center rounded-xl bg-background/50 px-5 py-3 border border-border/50 min-w-[80px]">
-                <span className="text-xl font-bold text-foreground">{zerados.length}</span>
+                <span className="text-xl font-bold text-foreground">{completed.length}</span>
                 <span className="text-xs text-muted-foreground">Zerados</span>
               </div>
               <div className="flex flex-col items-center justify-center rounded-xl bg-background/50 px-5 py-3 border border-border/50 min-w-[80px]">
-                <span className="text-xl font-bold text-foreground">{platinados.length}</span>
+                <span className="text-xl font-bold text-foreground">{platinum.length}</span>
                 <span className="text-xs text-muted-foreground">Platinados</span>
               </div>
               <div className="flex flex-col items-center justify-center rounded-xl bg-background/50 px-5 py-3 border border-border/50 min-w-[80px]">
-                <span className="text-xl font-bold text-foreground">{jogando.length}</span>
+                <span className="text-xl font-bold text-foreground">{playing.length}</span>
                 <span className="text-xs text-muted-foreground">Jogando</span>
               </div>
             </div>
@@ -189,10 +267,10 @@ function Perfil() {
         </section>
 
         {/* Tabs and Filters */}
-        <div className="mb-8 flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border">
+        <div className="mb-8 flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border pb-3">
           <nav className="flex gap-6 overflow-x-auto">
             <button
-              onClick={() => mudarAba("Backlog")}
+              onClick={() => changeTab("Backlog")}
               className={`pb-3 flex flex-col items-center gap-1 whitespace-nowrap transition-colors cursor-pointer ${
                 activeTab === "Backlog"
                   ? "border-b-2 border-ember text-ember"
@@ -200,10 +278,10 @@ function Perfil() {
               }`}
             >
               <span className="text-sm font-semibold">⌛ Backlog</span>
-              <span className="text-[10px] font-medium opacity-70">{backlog.length} {backlog.length === 1 ? "jogo" : "jogos"}</span>
+              <span className="text-[10px] font-medium opacity-70">{backlog.length} {backlog.length === 1 ? "jogo" : "games"}</span>
             </button>
             <button
-              onClick={() => mudarAba("Zerados")}
+              onClick={() => changeTab("Zerados")}
               className={`pb-3 flex flex-col items-center gap-1 whitespace-nowrap transition-colors cursor-pointer ${
                 activeTab === "Zerados"
                   ? "border-b-2 border-ember text-ember"
@@ -211,10 +289,10 @@ function Perfil() {
               }`}
             >
               <span className="text-sm font-semibold">🏆 Zerados</span>
-              <span className="text-[10px] font-medium opacity-70">{zerados.length} {zerados.length === 1 ? "jogo" : "jogos"}</span>
+              <span className="text-[10px] font-medium opacity-70">{completed.length} {completed.length === 1 ? "jogo" : "games"}</span>
             </button>
             <button
-              onClick={() => mudarAba("Platinados")}
+              onClick={() => changeTab("Platinados")}
               className={`pb-3 flex flex-col items-center gap-1 whitespace-nowrap transition-colors cursor-pointer ${
                 activeTab === "Platinados"
                   ? "border-b-2 border-ember text-ember"
@@ -222,10 +300,10 @@ function Perfil() {
               }`}
             >
               <span className="text-sm font-semibold">💎 Platinados</span>
-              <span className="text-[10px] font-medium opacity-70">{platinados.length} {platinados.length === 1 ? "jogo" : "jogos"}</span>
+              <span className="text-[10px] font-medium opacity-70">{platinum.length} {platinum.length === 1 ? "jogo" : "games"}</span>
             </button>
             <button
-              onClick={() => mudarAba("Jogando")}
+              onClick={() => changeTab("Jogando")}
               className={`pb-3 flex flex-col items-center gap-1 whitespace-nowrap transition-colors cursor-pointer ${
                 activeTab === "Jogando"
                   ? "border-b-2 border-ember text-ember"
@@ -233,20 +311,36 @@ function Perfil() {
               }`}
             >
               <span className="text-sm font-semibold">🕹️ Jogando</span>
-              <span className="text-[10px] font-medium opacity-70">{jogando.length} {jogando.length === 1 ? "jogo" : "jogos"}</span>
+              <span className="text-[10px] font-medium opacity-70">{playing.length} {playing.length === 1 ? "jogo" : "games"}</span>
             </button>
           </nav>
 
-          <div className="flex flex-wrap gap-2 shrink-0 pb-3">
+          <SteamSyncModal 
+            onSync={handleSteamSync} 
+            isSyncing={isSyncingSteam}
+            pendingResults={syncResults}
+            onConfirm={handleConfirmSync}
+            onCancel={() => setSyncResults(null)}
+          >
+            <button 
+              disabled={isSyncingSteam}
+              className="flex items-center gap-2 rounded-md bg-[#171a21] hover:bg-[#2a475e] text-[#66c0f4] px-4 py-2 text-sm font-bold border border-[#66c0f4]/20 transition-colors disabled:opacity-50"
+            >
+              {isSyncingSteam ? "Sincronizando..." : "Sincronizar Steam"}
+            </button>
+          </SteamSyncModal>
+        </div>
+
+        <div className="mb-8 flex flex-wrap gap-2 justify-end">
             <input
               type="text"
               placeholder="Buscar pelo nome..."
               value={textFilter}
-              onChange={(e) => { setTextFilter(e.target.value); setPagina(1); }}
+              onChange={(e) => { setTextFilter(e.target.value); setPage(1); }}
               className="w-[180px] bg-surface-2 border border-border h-9 text-sm rounded-md px-3 text-foreground focus:outline-none focus:ring-1 focus:ring-ember placeholder:text-muted-foreground"
             />
             {availablePlatforms.length > 0 && (
-              <Select value={platformFilter} onValueChange={(val) => { setPlatformFilter(val); setPagina(1); }}>
+              <Select value={platformFilter} onValueChange={(val) => { setPlatformFilter(val); setPage(1); }}>
                 <SelectTrigger className="w-[140px] bg-surface-2 border-border h-9 text-sm">
                   <SelectValue placeholder="Plataforma" />
                 </SelectTrigger>
@@ -260,7 +354,7 @@ function Perfil() {
             )}
 
             {availableYears.length > 0 && (
-              <Select value={yearFilter} onValueChange={(val) => { setYearFilter(val); setPagina(1); }}>
+              <Select value={yearFilter} onValueChange={(val) => { setYearFilter(val); setPage(1); }}>
                 <SelectTrigger className="w-[110px] bg-surface-2 border-border h-9 text-sm">
                   <SelectValue placeholder="Ano" />
                 </SelectTrigger>
@@ -273,7 +367,6 @@ function Perfil() {
               </Select>
             )}
           </div>
-        </div>
 
         {/* Game Grid */}
         <div className="grid grid-cols-2 gap-6 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
@@ -283,7 +376,7 @@ function Perfil() {
             </div>
           ) : (
             pagedGames.map((j) => {
-              const capa = retratoDe(j.imagem);
+              const capa = getPortrait(j.imagem);
               return (
                 <EditGameModal key={j.id} jogo={j} capa={capa}>
                   <button type="button" className="group relative flex flex-col overflow-hidden rounded-xl bg-surface-2 transition-transform hover:-translate-y-1 hover:shadow-xl border border-border/50 text-left cursor-pointer">
@@ -336,18 +429,18 @@ function Perfil() {
         {totalPages > 1 && (
           <div className="mt-10 flex items-center justify-center gap-4">
             <button
-              onClick={() => setPagina((p) => Math.max(1, p - 1))}
-              disabled={pagina === 1}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page === 1}
               className="flex h-9 items-center justify-center rounded-md border border-border bg-surface px-4 text-sm font-medium shadow-sm transition-colors hover:bg-surface-2 disabled:pointer-events-none disabled:opacity-50"
             >
               Anterior
             </button>
             <span className="text-sm font-medium text-muted-foreground">
-              Página {pagina} de {totalPages}
+              Página {page} de {totalPages}
             </span>
             <button
-              onClick={() => setPagina((p) => Math.min(totalPages, p + 1))}
-              disabled={pagina === totalPages}
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              disabled={page === totalPages}
               className="flex h-9 items-center justify-center rounded-md border border-border bg-surface px-4 text-sm font-medium shadow-sm transition-colors hover:bg-surface-2 disabled:pointer-events-none disabled:opacity-50"
             >
               Próxima

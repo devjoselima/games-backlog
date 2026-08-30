@@ -13,12 +13,12 @@ export const Route = createFileRoute("/auth")({
       { title: "Entrar | Planilha de Jogos Zerados" },
       {
         name: "description",
-        content: "Acesse sua conta para cadastrar, editar e remover jogos da sua planilha.",
+        content: "Acesse sua conta para cadastrar, editar e remover games da sua planilha.",
       },
       { property: "og:title", content: "Entrar | Planilha de Jogos Zerados" },
       {
         property: "og:description",
-        content: "Faça login para gerenciar os jogos da sua planilha.",
+        content: "Faça login para gerenciar os games da sua planilha.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
@@ -37,7 +37,7 @@ function AuthPage() {
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
-      if (data.session) navigate({ to: "/perfil", replace: true });
+      if (data.session) navigate({ to: "/profile", replace: true });
     });
   }, [navigate]);
 
@@ -48,7 +48,7 @@ function AuthPage() {
       if (modo === "login") {
         const { error } = await supabase.auth.signInWithPassword({ email, password: senha });
         if (error) throw error;
-        navigate({ to: "/perfil", replace: true });
+        navigate({ to: "/profile", replace: true });
       } else {
         const { error } = await supabase.auth.signUp({
           email,
@@ -78,7 +78,7 @@ function AuthPage() {
           {modo === "login" ? "Entrar" : "Criar conta"}
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          O dashboard é público, mas só quem tem login pode cadastrar ou remover jogos.
+          O dashboard é público, mas só quem tem login pode cadastrar ou remover games.
         </p>
 
         <form onSubmit={enviar} className="mt-6 space-y-4 rounded-xl border border-border bg-card p-5">

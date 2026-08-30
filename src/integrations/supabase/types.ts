@@ -34,7 +34,7 @@ export type Database = {
   }
   public: {
     Tables: {
-      jogos: {
+      games: {
         Row: {
           ano_jogado: number | null
           created_at: string

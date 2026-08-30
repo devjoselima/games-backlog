@@ -82,7 +82,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { title: "Planilha de Jogos Zerados" },
       {
         name: "description",
-        content: "Dashboard pessoal de jogos zerados, platinados e em andamento.",
+        content: "Dashboard pessoal de games completed, platinum e em andamento.",
       },
       { name: "author", content: "José Lima" },
       { property: "og:type", content: "website" },

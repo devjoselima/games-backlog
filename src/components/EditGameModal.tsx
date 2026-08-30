@@ -11,9 +11,9 @@ import { Calendar } from "@/components/ui/calendar";
 import { format } from "date-fns";
 import { CalendarIcon, Trash2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { PLATAFORMA_OPCOES, STATUS_OPCOES, type Jogo } from "@/lib/jogos";
+import { PLATFORM_OPTIONS, STATUS_OPTIONS, type Game } from "@/lib/games";
 
-export function EditGameModal({ jogo, capa, children }: { jogo: Jogo; capa?: string | null; children: React.ReactNode }) {
+export function EditGameModal({ jogo, capa, children }: { jogo: Game; capa?: string | null; children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({
     plataforma: jogo.plataforma || "",
@@ -29,9 +29,10 @@ export function EditGameModal({ jogo, capa, children }: { jogo: Jogo; capa?: str
   const atualizar = useMutation({
     mutationFn: async () => {
       const isConcluido = form.status === "Zerado" || form.status === "Platinado";
+      const isJogando = form.status === "Jogando";
       const dataFinal = isConcluido ? (form.data_zerado || null) : null;
       const notaFinal = isConcluido && form.nota ? Number(form.nota.replace(",", ".")) : null;
-      const horasFinal = isConcluido && form.horas_jogadas ? Number(form.horas_jogadas.replace(",", ".")) : null;
+      const horasFinal = (isConcluido || isJogando) && form.horas_jogadas ? Number(form.horas_jogadas.replace(",", ".")) : null;
 
       const { error } = await supabase
         .from("jogos")
@@ -47,8 +48,8 @@ export function EditGameModal({ jogo, capa, children }: { jogo: Jogo; capa?: str
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["jogos"] });
-      toast.success("Jogo atualizado!");
+      queryClient.invalidateQueries({ queryKey: ["games"] });
+      toast.success("Game atualizado!");
       setOpen(false);
     },
     onError: (e: Error) => toast.error(e.message),
@@ -60,8 +61,8 @@ export function EditGameModal({ jogo, capa, children }: { jogo: Jogo; capa?: str
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["jogos"] });
-      toast.success("Jogo excluído!");
+      queryClient.invalidateQueries({ queryKey: ["games"] });
+      toast.success("Game excluído!");
       setOpen(false);
     },
     onError: (e: Error) => toast.error(e.message),
@@ -97,7 +98,7 @@ export function EditGameModal({ jogo, capa, children }: { jogo: Jogo; capa?: str
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {STATUS_OPCOES.map((s) => (
+                  {STATUS_OPTIONS.map((s) => (
                     <SelectItem key={s} value={s}>{s}</SelectItem>
                   ))}
                 </SelectContent>
@@ -110,7 +111,7 @@ export function EditGameModal({ jogo, capa, children }: { jogo: Jogo; capa?: str
                   <SelectValue placeholder="Selecione" />
                 </SelectTrigger>
                 <SelectContent>
-                  {PLATAFORMA_OPCOES.map((p) => (
+                  {PLATFORM_OPTIONS.map((p) => (
                     <SelectItem key={p} value={p}>{p}</SelectItem>
                   ))}
                 </SelectContent>
@@ -156,7 +157,7 @@ export function EditGameModal({ jogo, capa, children }: { jogo: Jogo; capa?: str
                 />
               </div>
             )}
-            {(form.status === "Zerado" || form.status === "Platinado") && (
+            {(form.status === "Zerado" || form.status === "Platinado" || form.status === "Jogando") && (
               <div className="space-y-1.5">
                 <Label htmlFor="horas">Horas</Label>
                 <Input

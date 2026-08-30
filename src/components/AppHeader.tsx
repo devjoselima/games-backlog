@@ -63,7 +63,7 @@ export function AppHeader() {
           {link("/", "Dashboard")}
           {logado ? (
             <>
-              {link("/perfil", "Perfil")}
+              {link("/profile", "Perfil")}
               <LogGameModal>
                 <button className="ml-2 cursor-pointer rounded-md bg-ember px-3.5 py-1.5 text-sm font-semibold text-white transition-opacity hover:opacity-90">
                   Log Game
