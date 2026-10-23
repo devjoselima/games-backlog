@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -34,6 +34,7 @@ export function LogGameModal({ children }: { children: React.ReactNode }) {
   const [selectedCover, setCapaSelecionada] = useState<string | null>(null);
   const [searchTerm, setTermoBusca] = useState("");
   const [focusedIndex, setFocusedIndex] = useState(-1);
+  const blurTimerRef = useRef<number | null>(null);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const { data: games = [] } = useQuery(gamesQuery);
@@ -128,7 +129,7 @@ export function LogGameModal({ children }: { children: React.ReactNode }) {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>{children}</DialogTrigger>
-      <DialogContent className="sm:max-w-[650px] w-[95vw] overflow-hidden bg-background">
+      <DialogContent className="sm:max-w-[650px] w-[95vw] bg-background">
         <DialogHeader>
           <DialogTitle>Log Game</DialogTitle>
         </DialogHeader>
@@ -185,7 +186,10 @@ export function LogGameModal({ children }: { children: React.ReactNode }) {
                     setSugestoesAbertas(true);
                   }}
                   onFocus={() => setSugestoesAbertas(true)}
-                  onBlur={() => window.setTimeout(() => setSugestoesAbertas(false), 150)}
+                  onBlur={() => {
+                    if (blurTimerRef.current !== null) window.clearTimeout(blurTimerRef.current);
+                    blurTimerRef.current = window.setTimeout(() => setSugestoesAbertas(false), 200);
+                  }}
                   onKeyDown={(e) => {
                     if (e.key === "Enter" && form.nome) return; // allows submitting if game is already picked
                     if (e.key === "Enter" && !form.nome && search) {
@@ -212,10 +216,12 @@ export function LogGameModal({ children }: { children: React.ReactNode }) {
                   placeholder="Buscar jogo"
                   className="bg-surface-2 w-full"
                 />
-                {suggestionsOpen && (isSearching || suggestions.length > 0) ? (
+                {suggestionsOpen && (isSearching || suggestions.length > 0 || searchTerm.length >= 2) ? (
                   <div className="absolute z-50 mt-1 max-h-72 w-full overflow-y-auto overflow-x-hidden rounded-md border border-border bg-surface-2 p-1 shadow-lg">
                     {isSearching && suggestions.length === 0 ? (
                       <p className="px-2 py-2 text-xs text-muted-foreground">Buscando games…</p>
+                    ) : !isSearching && suggestions.length === 0 ? (
+                      <p className="px-2 py-2 text-xs text-muted-foreground">Nenhum jogo encontrado.</p>
                     ) : null}
                     {suggestions.map((s, idx) => (
                       <button
