@@ -38,9 +38,12 @@ export type Database = {
         Row: {
           ano_jogado: number | null
           created_at: string
+          data_zerado: string | null
+          data_platinado: string | null
           genero: string | null
           horas_jogadas: number | null
           id: string
+          imagem: string | null
           nome: string
           nota: number | null
           ordem: number | null
@@ -52,9 +55,12 @@ export type Database = {
         Insert: {
           ano_jogado?: number | null
           created_at?: string
+          data_zerado?: string | null
+          data_platinado?: string | null
           genero?: string | null
           horas_jogadas?: number | null
           id?: string
+          imagem?: string | null
           nome: string
           nota?: number | null
           ordem?: number | null
@@ -66,9 +72,66 @@ export type Database = {
         Update: {
           ano_jogado?: number | null
           created_at?: string
+          data_zerado?: string | null
+          data_platinado?: string | null
           genero?: string | null
           horas_jogadas?: number | null
           id?: string
+          imagem?: string | null
+          nome?: string
+          nota?: number | null
+          ordem?: number | null
+          plataforma?: string | null
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      jogos: {
+        Row: {
+          ano_jogado: number | null
+          created_at: string
+          data_zerado: string | null
+          data_platinado: string | null
+          genero: string | null
+          horas_jogadas: number | null
+          id: string
+          imagem: string | null
+          nome: string
+          nota: number | null
+          ordem: number | null
+          plataforma: string | null
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          ano_jogado?: number | null
+          created_at?: string
+          data_zerado?: string | null
+          data_platinado?: string | null
+          genero?: string | null
+          horas_jogadas?: number | null
+          id?: string
+          imagem?: string | null
+          nome: string
+          nota?: number | null
+          ordem?: number | null
+          plataforma?: string | null
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Update: {
+          ano_jogado?: number | null
+          created_at?: string
+          data_zerado?: string | null
+          data_platinado?: string | null
+          genero?: string | null
+          horas_jogadas?: number | null
+          id?: string
+          imagem?: string | null
           nome?: string
           nota?: number | null
           ordem?: number | null

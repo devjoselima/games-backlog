@@ -9,6 +9,7 @@ export type Game = {
   status: string;
   ano_jogado: number | null;
   data_zerado: string | null;
+  data_platinado: string | null;
   nota: number | null;
   horas_jogadas: number | null;
   ordem: number | null;
@@ -36,10 +37,21 @@ export const GENERO_OPCOES = [
 export async function fetchGames(): Promise<Game[]> {
   const { data, error } = await supabase
     .from("jogos")
-    .select("id, nome, genero, plataforma, status, ano_jogado, data_zerado, nota, horas_jogadas, ordem, created_at, imagem")
-    .order("data_zerado", { ascending: false, nullsLast: true })
+    .select("id, nome, genero, plataforma, status, ano_jogado, data_zerado, data_platinado, nota, horas_jogadas, ordem, created_at, imagem")
+    .order("data_zerado", { ascending: false, nullsFirst: false })
     .order("created_at", { ascending: false });
-  if (error) throw error;
+  if (error) {
+    if (error.message?.includes("data_platinado") || (error as any).code === "42703") {
+      const fallback = await supabase
+        .from("jogos")
+        .select("id, nome, genero, plataforma, status, ano_jogado, data_zerado, nota, horas_jogadas, ordem, created_at, imagem")
+        .order("data_zerado", { ascending: false, nullsFirst: false })
+        .order("created_at", { ascending: false });
+      if (fallback.error) throw fallback.error;
+      return (fallback.data ?? []).map((g: any) => ({ ...g, data_platinado: null })) as Game[];
+    }
+    throw error;
+  }
   return (data ?? []) as Game[];
 }
 
