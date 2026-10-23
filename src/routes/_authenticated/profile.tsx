@@ -352,15 +352,25 @@ function Perfil() {
           </SteamSyncModal>
         </div>
 
-        <div className="mb-8 flex flex-wrap gap-2 justify-end">
+        <div className="mb-8 flex flex-wrap items-end gap-3 justify-end">
+          <div className="flex flex-col gap-1.5">
+            <label htmlFor="filter-name" className="text-xs font-medium text-muted-foreground">
+              Buscar
+            </label>
             <input
+              id="filter-name"
               type="text"
               placeholder="Buscar pelo nome..."
               value={textFilter}
               onChange={(e) => { setTextFilter(e.target.value); setPage(1); }}
               className="w-[180px] bg-surface-2 border border-border h-9 text-sm rounded-md px-3 text-foreground focus:outline-none focus:ring-1 focus:ring-ember placeholder:text-muted-foreground"
             />
-            {availablePlatforms.length > 0 && (
+          </div>
+          {availablePlatforms.length > 0 && (
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-medium text-muted-foreground">
+                Plataforma
+              </label>
               <Select value={platformFilter} onValueChange={(val) => { setPlatformFilter(val); setPage(1); }}>
                 <SelectTrigger className="w-[140px] bg-surface-2 border-border h-9 text-sm">
                   <SelectValue placeholder="Plataforma" />
@@ -372,9 +382,14 @@ function Perfil() {
                   ))}
                 </SelectContent>
               </Select>
-            )}
+            </div>
+          )}
 
-            {availableYears.length > 0 && (
+          {availableYears.length > 0 && (
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-medium text-muted-foreground">
+                Ano
+              </label>
               <Select value={yearFilter} onValueChange={(val) => { setYearFilter(val); setPage(1); }}>
                 <SelectTrigger className="w-[110px] bg-surface-2 border-border h-9 text-sm">
                   <SelectValue placeholder="Ano" />
@@ -386,8 +401,9 @@ function Perfil() {
                   ))}
                 </SelectContent>
               </Select>
-            )}
-          </div>
+            </div>
+          )}
+        </div>
 
         {/* Game Grid */}
         <div className="grid grid-cols-2 gap-6 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
