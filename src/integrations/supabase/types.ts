@@ -163,6 +163,39 @@ export type Database = {
         }
         Relationships: []
       }
+      trofeus_anuais: {
+        Row: {
+          ano: number
+          created_at: string
+          id: string
+          psn: number
+          steam: number
+          total: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          ano: number
+          created_at?: string
+          id?: string
+          psn?: number
+          steam?: number
+          total?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          ano?: number
+          created_at?: string
+          id?: string
+          psn?: number
+          steam?: number
+          total?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
