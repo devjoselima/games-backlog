@@ -205,16 +205,16 @@ function Dashboard() {
     const lastItem = (arr: Game[]) => {
       if (!arr.length) return "—";
       const sorted = [...arr].sort((a, b) => {
-        const dA = new Date(a.data_zerado || a.created_at).getTime();
-        const dB = new Date(b.data_zerado || b.created_at).getTime();
+        const dA = new Date(a.data_platinado || a.data_zerado || a.created_at).getTime();
+        const dB = new Date(b.data_platinado || b.data_zerado || b.created_at).getTime();
         return dA - dB;
       });
       return sorted[sorted.length - 1].nome;
     };
 
     const sortedCompleted = [...completedList].sort((a, b) => {
-      const dateA = new Date(a.data_zerado || a.created_at).getTime();
-      const dateB = new Date(b.data_zerado || b.created_at).getTime();
+      const dateA = new Date(a.data_platinado || a.data_zerado || a.created_at).getTime();
+      const dateB = new Date(b.data_platinado || b.data_zerado || b.created_at).getTime();
       return dateB - dateA; // Descending order
     });
     const recentItems = sortedCompleted.slice(0, 5);
