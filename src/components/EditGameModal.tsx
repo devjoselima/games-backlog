@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -18,34 +18,79 @@ export function EditGameModal({ jogo, capa, children }: { jogo: Game; capa?: str
   const [form, setForm] = useState({
     plataforma: jogo.plataforma || "",
     status: jogo.status || "Zerado",
-    data_zerado: jogo.data_zerado || (jogo.ano_jogado ? `${jogo.ano_jogado}-01-01` : ""),
+    data_zerado: jogo.data_zerado || (jogo.ano_jogado && jogo.status !== "Platinado" ? `${jogo.ano_jogado}-01-01` : ""),
+    data_platinado:
+      jogo.data_platinado ||
+      (jogo.status === "Platinado"
+        ? (jogo.data_zerado || (jogo.ano_jogado ? `${jogo.ano_jogado}-01-01` : ""))
+        : ""),
     nota: jogo.nota ? String(jogo.nota) : "",
     horas_jogadas: jogo.horas_jogadas ? String(jogo.horas_jogadas) : "",
   });
   const queryClient = useQueryClient();
+
+  useEffect(() => {
+    if (open) {
+      setForm({
+        plataforma: jogo.plataforma || "",
+        status: jogo.status || "Zerado",
+        data_zerado: jogo.data_zerado || (jogo.ano_jogado && jogo.status !== "Platinado" ? `${jogo.ano_jogado}-01-01` : ""),
+        data_platinado:
+          jogo.data_platinado ||
+          (jogo.status === "Platinado"
+            ? (jogo.data_zerado || (jogo.ano_jogado ? `${jogo.ano_jogado}-01-01` : ""))
+            : ""),
+        nota: jogo.nota ? String(jogo.nota) : "",
+        horas_jogadas: jogo.horas_jogadas ? String(jogo.horas_jogadas) : "",
+      });
+    }
+  }, [open, jogo]);
 
   const set = (k: keyof typeof form) => (v: string) => setForm((f) => ({ ...f, [k]: v }));
 
   const atualizar = useMutation({
     mutationFn: async () => {
       const isConcluido = form.status === "Zerado" || form.status === "Platinado";
+      const isPlatinado = form.status === "Platinado";
       const isJogando = form.status === "Jogando";
-      const dataFinal = isConcluido ? (form.data_zerado || null) : null;
+      const dataZeradoFinal = isConcluido ? (form.data_zerado || null) : null;
+      const dataPlatinadoFinal = isPlatinado ? (form.data_platinado || null) : null;
+      const dataReferencia = dataPlatinadoFinal || dataZeradoFinal;
+      const anoJogadoFinal = dataReferencia ? Number(dataReferencia.split("-")[0]) : (isConcluido ? jogo.ano_jogado : null);
       const notaFinal = isConcluido && form.nota ? Number(form.nota.replace(",", ".")) : null;
       const horasFinal = (isConcluido || isJogando) && form.horas_jogadas ? Number(form.horas_jogadas.replace(",", ".")) : null;
 
+      const payload: {
+        plataforma?: string | null;
+        status?: string;
+        data_zerado?: string | null;
+        data_platinado?: string | null;
+        ano_jogado?: number | null;
+        nota?: number | null;
+        horas_jogadas?: number | null;
+      } = {
+        plataforma: form.plataforma || null,
+        status: form.status,
+        data_zerado: dataZeradoFinal,
+        data_platinado: dataPlatinadoFinal,
+        ano_jogado: anoJogadoFinal,
+        nota: notaFinal,
+        horas_jogadas: horasFinal,
+      };
+
       const { error } = await supabase
         .from("jogos")
-        .update({
-          plataforma: form.plataforma || null,
-          status: form.status,
-          data_zerado: dataFinal,
-          ano_jogado: dataFinal ? Number(dataFinal.split("-")[0]) : null,
-          nota: notaFinal,
-          horas_jogadas: horasFinal,
-        })
+        .update(payload)
         .eq("id", jogo.id);
-      if (error) throw error;
+      if (error) {
+        if (error.message?.includes("data_platinado") || (error as any).code === "42703") {
+          delete payload.data_platinado;
+          const retry = await supabase.from("jogos").update(payload).eq("id", jogo.id);
+          if (retry.error) throw retry.error;
+        } else {
+          throw error;
+        }
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["games"] });
@@ -87,13 +132,25 @@ export function EditGameModal({ jogo, capa, children }: { jogo: Game; capa?: str
               className="flex flex-col gap-4 pt-4 w-full h-full"
           onSubmit={(e) => {
             e.preventDefault();
+            if (form.status === "Platinado" && !form.data_platinado) {
+              toast.error("Informe a data em que o jogo foi platinado");
+              return;
+            }
             atualizar.mutate();
           }}
         >
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label>Status</Label>
-              <Select value={form.status} onValueChange={set("status")}>
+              <Select
+                value={form.status}
+                onValueChange={(val) => {
+                  set("status")(val);
+                  if (val === "Platinado" && !form.data_platinado && form.data_zerado) {
+                    set("data_platinado")(form.data_zerado);
+                  }
+                }}
+              >
                 <SelectTrigger className="bg-surface-2">
                   <SelectValue />
                 </SelectTrigger>
@@ -119,10 +176,10 @@ export function EditGameModal({ jogo, capa, children }: { jogo: Game; capa?: str
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-3">
-            {(form.status === "Zerado" || form.status === "Platinado") && (
+          {form.status === "Zerado" && (
+            <div className="grid grid-cols-3 gap-3">
               <div className="space-y-1.5 flex flex-col pt-1">
-                <Label>Data</Label>
+                <Label>Zerado em</Label>
                 <Popover>
                   <PopoverTrigger asChild>
                     <Button
@@ -140,11 +197,22 @@ export function EditGameModal({ jogo, capa, children }: { jogo: Game; capa?: str
                       onSelect={(d) => set("data_zerado")(d ? format(d, "yyyy-MM-dd") : "")}
                       initialFocus
                     />
+                    {form.data_zerado && (
+                      <div className="p-2 border-t border-border flex justify-end">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="text-xs h-7 text-muted-foreground hover:text-foreground"
+                          onClick={() => set("data_zerado")("")}
+                        >
+                          Limpar data
+                        </Button>
+                      </div>
+                    )}
                   </PopoverContent>
                 </Popover>
               </div>
-            )}
-            {(form.status === "Zerado" || form.status === "Platinado") && (
               <div className="space-y-1.5">
                 <Label htmlFor="nota">Nota</Label>
                 <Input
@@ -156,8 +224,6 @@ export function EditGameModal({ jogo, capa, children }: { jogo: Game; capa?: str
                   className="bg-surface-2"
                 />
               </div>
-            )}
-            {(form.status === "Zerado" || form.status === "Platinado" || form.status === "Jogando") && (
               <div className="space-y-1.5">
                 <Label htmlFor="horas">Horas</Label>
                 <Input
@@ -169,8 +235,125 @@ export function EditGameModal({ jogo, capa, children }: { jogo: Game; capa?: str
                   className="bg-surface-2"
                 />
               </div>
-            )}
-          </div>
+            </div>
+          )}
+
+          {form.status === "Platinado" && (
+            <>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5 flex flex-col pt-1">
+                  <Label>Zerado em</Label>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        className={`justify-start text-left font-normal bg-surface-2 px-3 ${!form.data_zerado ? "text-muted-foreground" : ""}`}
+                      >
+                        <CalendarIcon className="mr-2 h-4 w-4 shrink-0" />
+                        <span className="truncate">{form.data_zerado ? format(new Date(form.data_zerado + "T12:00:00"), "dd/MM/yyyy") : "Selecione"}</span>
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <Calendar
+                        mode="single"
+                        selected={form.data_zerado ? new Date(form.data_zerado + "T12:00:00") : undefined}
+                        onSelect={(d) => set("data_zerado")(d ? format(d, "yyyy-MM-dd") : "")}
+                        initialFocus
+                      />
+                      {form.data_zerado && (
+                        <div className="p-2 border-t border-border flex justify-end">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="text-xs h-7 text-muted-foreground hover:text-foreground"
+                            onClick={() => set("data_zerado")("")}
+                          >
+                            Limpar data
+                          </Button>
+                        </div>
+                      )}
+                    </PopoverContent>
+                  </Popover>
+                </div>
+                <div className="space-y-1.5 flex flex-col pt-1">
+                  <Label>
+                    Platinado em <span className="text-destructive">*</span>
+                  </Label>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        className={`justify-start text-left font-normal bg-surface-2 px-3 ${!form.data_platinado ? "text-muted-foreground" : ""}`}
+                      >
+                        <CalendarIcon className="mr-2 h-4 w-4 shrink-0" />
+                        <span className="truncate">{form.data_platinado ? format(new Date(form.data_platinado + "T12:00:00"), "dd/MM/yyyy") : "Selecione"}</span>
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <Calendar
+                        mode="single"
+                        selected={form.data_platinado ? new Date(form.data_platinado + "T12:00:00") : undefined}
+                        onSelect={(d) => set("data_platinado")(d ? format(d, "yyyy-MM-dd") : "")}
+                        initialFocus
+                      />
+                      {form.data_platinado && (
+                        <div className="p-2 border-t border-border flex justify-end">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="text-xs h-7 text-muted-foreground hover:text-foreground"
+                            onClick={() => set("data_platinado")("")}
+                          >
+                            Limpar data
+                          </Button>
+                        </div>
+                      )}
+                    </PopoverContent>
+                  </Popover>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="nota">Nota</Label>
+                  <Input
+                    id="nota"
+                    inputMode="decimal"
+                    placeholder="0–10"
+                    value={form.nota}
+                    onChange={(e) => set("nota")(e.target.value)}
+                    className="bg-surface-2"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="horas">Horas</Label>
+                  <Input
+                    id="horas"
+                    inputMode="decimal"
+                    placeholder="0"
+                    value={form.horas_jogadas}
+                    onChange={(e) => set("horas_jogadas")(e.target.value)}
+                    className="bg-surface-2"
+                  />
+                </div>
+              </div>
+            </>
+          )}
+
+          {form.status === "Jogando" && (
+            <div className="space-y-1.5">
+              <Label htmlFor="horas">Horas</Label>
+              <Input
+                id="horas"
+                inputMode="decimal"
+                placeholder="0"
+                value={form.horas_jogadas}
+                onChange={(e) => set("horas_jogadas")(e.target.value)}
+                className="bg-surface-2"
+              />
+            </div>
+          )}
 
             <div className="mt-auto flex gap-2 pt-4">
               <Button

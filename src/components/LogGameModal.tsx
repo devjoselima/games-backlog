@@ -21,6 +21,7 @@ const vazio = {
   plataforma: "",
   status: "Zerado",
   data_zerado: "",
+  data_platinado: "",
   nota: "",
   horas_jogadas: "",
 };
@@ -66,23 +67,51 @@ export function LogGameModal({ children }: { children: React.ReactNode }) {
       if (!uid) throw new Error("Sessão expirada. Faça login novamente.");
       
       const isConcluido = form.status === "Zerado" || form.status === "Platinado";
-      const dataFinal = isConcluido ? (form.data_zerado || null) : null;
+      const isPlatinado = form.status === "Platinado";
+      const isJogando = form.status === "Jogando";
+      const dataZeradoFinal = isConcluido ? (form.data_zerado || null) : null;
+      const dataPlatinadoFinal = isPlatinado ? (form.data_platinado || null) : null;
+      const dataReferencia = dataPlatinadoFinal || dataZeradoFinal;
+      const anoJogadoFinal = dataReferencia ? Number(dataReferencia.split("-")[0]) : null;
       const notaFinal = isConcluido && form.nota ? Number(form.nota.replace(",", ".")) : null;
-      const horasFinal = isConcluido && form.horas_jogadas ? Number(form.horas_jogadas.replace(",", ".")) : null;
-      
-        const { error } = await supabase.from("jogos").insert({
-          user_id: uid,
-          nome: form.nome.trim(),
-          genero: form.genero || null,
-          plataforma: form.plataforma || null,
-          status: form.status,
-          data_zerado: dataFinal,
-          ano_jogado: dataFinal ? Number(dataFinal.split("-")[0]) : null,
-          nota: notaFinal,
-          horas_jogadas: horasFinal,
-          imagem: selectedCover,
-        });
-        if (error) throw error;
+      const horasFinal = (isConcluido || isJogando) && form.horas_jogadas ? Number(form.horas_jogadas.replace(",", ".")) : null;
+
+      const payload: {
+        user_id: string;
+        nome: string;
+        genero?: string | null;
+        plataforma?: string | null;
+        status: string;
+        data_zerado?: string | null;
+        data_platinado?: string | null;
+        ano_jogado?: number | null;
+        nota?: number | null;
+        horas_jogadas?: number | null;
+        imagem?: string | null;
+      } = {
+        user_id: uid,
+        nome: form.nome.trim(),
+        genero: form.genero || null,
+        plataforma: form.plataforma || null,
+        status: form.status,
+        data_zerado: dataZeradoFinal,
+        data_platinado: dataPlatinadoFinal,
+        ano_jogado: anoJogadoFinal,
+        nota: notaFinal,
+        horas_jogadas: horasFinal,
+        imagem: selectedCover,
+      };
+
+      const { error } = await supabase.from("jogos").insert(payload);
+      if (error) {
+        if (error.message?.includes("data_platinado") || (error as any).code === "42703") {
+          delete payload.data_platinado;
+          const retry = await supabase.from("jogos").insert(payload);
+          if (retry.error) throw retry.error;
+        } else {
+          throw error;
+        }
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["games"] });
@@ -109,6 +138,10 @@ export function LogGameModal({ children }: { children: React.ReactNode }) {
             e.preventDefault();
             if (!form.nome.trim()) {
               toast.error("Selecione um jogo na lista");
+              return;
+            }
+            if (form.status === "Platinado" && !form.data_platinado) {
+              toast.error("Informe a data em que o jogo foi platinado");
               return;
             }
             createMutation.mutate();
@@ -243,7 +276,15 @@ export function LogGameModal({ children }: { children: React.ReactNode }) {
             </div>
             <div className="space-y-1.5">
               <Label>Status</Label>
-              <Select value={form.status} onValueChange={set("status")}>
+              <Select
+                value={form.status}
+                onValueChange={(val) => {
+                  set("status")(val);
+                  if (val === "Platinado" && !form.data_platinado && form.data_zerado) {
+                    set("data_platinado")(form.data_zerado);
+                  }
+                }}
+              >
                 <SelectTrigger className="bg-surface-2">
                   <SelectValue />
                 </SelectTrigger>
@@ -256,10 +297,10 @@ export function LogGameModal({ children }: { children: React.ReactNode }) {
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-3">
-            {(form.status === "Zerado" || form.status === "Platinado") && (
+          {form.status === "Zerado" && (
+            <div className="grid grid-cols-3 gap-3">
               <div className="space-y-1.5 flex flex-col pt-1">
-                <Label>Data</Label>
+                <Label>Zerado em</Label>
                 <Popover>
                   <PopoverTrigger asChild>
                     <Button
@@ -277,11 +318,22 @@ export function LogGameModal({ children }: { children: React.ReactNode }) {
                       onSelect={(d) => set("data_zerado")(d ? format(d, "yyyy-MM-dd") : "")}
                       initialFocus
                     />
+                    {form.data_zerado && (
+                      <div className="p-2 border-t border-border flex justify-end">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="text-xs h-7 text-muted-foreground hover:text-foreground"
+                          onClick={() => set("data_zerado")("")}
+                        >
+                          Limpar data
+                        </Button>
+                      </div>
+                    )}
                   </PopoverContent>
                 </Popover>
               </div>
-            )}
-            {(form.status === "Zerado" || form.status === "Platinado") && (
               <div className="space-y-1.5">
                 <Label htmlFor="nota">Nota</Label>
                 <Input
@@ -293,8 +345,6 @@ export function LogGameModal({ children }: { children: React.ReactNode }) {
                   className="bg-surface-2"
                 />
               </div>
-            )}
-            {(form.status === "Zerado" || form.status === "Platinado") && (
               <div className="space-y-1.5">
                 <Label htmlFor="horas">Horas</Label>
                 <Input
@@ -306,8 +356,125 @@ export function LogGameModal({ children }: { children: React.ReactNode }) {
                   className="bg-surface-2"
                 />
               </div>
-            )}
-          </div>
+            </div>
+          )}
+
+          {form.status === "Platinado" && (
+            <>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5 flex flex-col pt-1">
+                  <Label>Zerado em</Label>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        className={`justify-start text-left font-normal bg-surface-2 px-3 ${!form.data_zerado ? "text-muted-foreground" : ""}`}
+                      >
+                        <CalendarIcon className="mr-2 h-4 w-4 shrink-0" />
+                        <span className="truncate">{form.data_zerado ? format(new Date(form.data_zerado + "T12:00:00"), "dd/MM/yyyy") : "Selecione"}</span>
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <Calendar
+                        mode="single"
+                        selected={form.data_zerado ? new Date(form.data_zerado + "T12:00:00") : undefined}
+                        onSelect={(d) => set("data_zerado")(d ? format(d, "yyyy-MM-dd") : "")}
+                        initialFocus
+                      />
+                      {form.data_zerado && (
+                        <div className="p-2 border-t border-border flex justify-end">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="text-xs h-7 text-muted-foreground hover:text-foreground"
+                            onClick={() => set("data_zerado")("")}
+                          >
+                            Limpar data
+                          </Button>
+                        </div>
+                      )}
+                    </PopoverContent>
+                  </Popover>
+                </div>
+                <div className="space-y-1.5 flex flex-col pt-1">
+                  <Label>
+                    Platinado em <span className="text-destructive">*</span>
+                  </Label>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        className={`justify-start text-left font-normal bg-surface-2 px-3 ${!form.data_platinado ? "text-muted-foreground" : ""}`}
+                      >
+                        <CalendarIcon className="mr-2 h-4 w-4 shrink-0" />
+                        <span className="truncate">{form.data_platinado ? format(new Date(form.data_platinado + "T12:00:00"), "dd/MM/yyyy") : "Selecione"}</span>
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <Calendar
+                        mode="single"
+                        selected={form.data_platinado ? new Date(form.data_platinado + "T12:00:00") : undefined}
+                        onSelect={(d) => set("data_platinado")(d ? format(d, "yyyy-MM-dd") : "")}
+                        initialFocus
+                      />
+                      {form.data_platinado && (
+                        <div className="p-2 border-t border-border flex justify-end">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="text-xs h-7 text-muted-foreground hover:text-foreground"
+                            onClick={() => set("data_platinado")("")}
+                          >
+                            Limpar data
+                          </Button>
+                        </div>
+                      )}
+                    </PopoverContent>
+                  </Popover>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="nota">Nota</Label>
+                  <Input
+                    id="nota"
+                    inputMode="decimal"
+                    placeholder="0–10"
+                    value={form.nota}
+                    onChange={(e) => set("nota")(e.target.value)}
+                    className="bg-surface-2"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="horas">Horas</Label>
+                  <Input
+                    id="horas"
+                    inputMode="decimal"
+                    placeholder="0"
+                    value={form.horas_jogadas}
+                    onChange={(e) => set("horas_jogadas")(e.target.value)}
+                    className="bg-surface-2"
+                  />
+                </div>
+              </div>
+            </>
+          )}
+
+          {form.status === "Jogando" && (
+            <div className="space-y-1.5">
+              <Label htmlFor="horas">Horas</Label>
+              <Input
+                id="horas"
+                inputMode="decimal"
+                placeholder="0"
+                value={form.horas_jogadas}
+                onChange={(e) => set("horas_jogadas")(e.target.value)}
+                className="bg-surface-2"
+              />
+            </div>
+          )}
 
           <div className="mt-4 flex gap-2">
             <Button type="submit" className="w-full" disabled={createMutation.isPending}>
