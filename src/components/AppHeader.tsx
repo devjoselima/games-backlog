@@ -1,9 +1,13 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { Gamepad2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { LogGameModal } from "@/components/LogGameModal";
+import { Skeleton } from "@/components/ui/skeleton";
+
+const LogGameModal = lazy(() =>
+  import("@/components/LogGameModal").then((m) => ({ default: m.LogGameModal })),
+);
 
 export function AppHeader() {
   const path = useRouterState({ select: (s) => s.location.pathname });
@@ -64,11 +68,13 @@ export function AppHeader() {
           {logado ? (
             <>
               {link("/profile", "Perfil")}
-              <LogGameModal>
-                <button className="ml-2 cursor-pointer rounded-md bg-ember px-3.5 py-1.5 text-sm font-semibold text-white transition-opacity hover:opacity-90">
-                  Log Game
-                </button>
-              </LogGameModal>
+              <Suspense fallback={<Skeleton className="ml-2 h-8 w-24 rounded-md" />}>
+                <LogGameModal>
+                  <button className="ml-2 cursor-pointer rounded-md bg-ember px-3.5 py-1.5 text-sm font-semibold text-white transition-opacity hover:opacity-90">
+                    Log Game
+                  </button>
+                </LogGameModal>
+              </Suspense>
             </>
           ) : (
             <Link
