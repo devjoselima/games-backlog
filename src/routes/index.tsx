@@ -1,18 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { Suspense, lazy, useMemo, useState } from "react";
 import { toast } from "sonner";
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Cell,
-  LabelList,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
 import {
   Trophy,
   CheckCircle2,
@@ -26,6 +15,7 @@ import {
 
 import { AppHeader } from "@/components/AppHeader";
 import { EditGameModal } from "@/components/EditGameModal";
+import { Skeleton, LazyCoverImage } from "@/components/ui/skeleton";
 import {
   Select,
   SelectContent,
@@ -44,6 +34,8 @@ import {
 import { syncAnnualTrophies } from "@/lib/trophies.server";
 import { supabase } from "@/integrations/supabase/client";
 import { useSessaoUsuario } from "@/lib/use-session";
+
+const DashboardCharts = lazy(() => import("@/components/DashboardCharts"));
 
 const GENRE_TRANSLATIONS: Record<string, string> = {
   "Role-playing (RPG)": "RPG",
@@ -132,7 +124,7 @@ function Card({
   );
 }
 
-/** Capa vertical (IGDB t_cover_big, 264x374) exibida inteira, sem cortes. */
+/** Capa vertical (IGDB t_cover_big, 264x374) exibida inteira, sem cortes, com lazy loading e skeleton. */
 function Retrato({
   nome,
   src,
@@ -143,6 +135,8 @@ function Retrato({
   tamanho?: number;
 }) {
   const height = Math.round(tamanho * (374 / 264));
+  const [loaded, setLoaded] = useState(false);
+
   return (
     <div
       className="relative flex shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border bg-surface-2 shadow-md"
@@ -150,17 +144,24 @@ function Retrato({
     >
       {src ? (
         <>
+          {!loaded && <Skeleton className="absolute inset-0 h-full w-full rounded-none" />}
           <img
             src={src}
             alt=""
             aria-hidden
+            loading="lazy"
+            decoding="async"
             className="absolute inset-0 h-full w-full scale-110 object-cover opacity-25 blur-lg"
           />
           <img
             src={src}
             alt={`Capa de ${nome}`}
             loading="lazy"
-            className="relative h-full w-full object-contain"
+            decoding="async"
+            onLoad={() => setLoaded(true)}
+            className={`relative h-full w-full object-contain transition-opacity duration-300 ${
+              loaded ? "opacity-100" : "opacity-0"
+            }`}
           />
         </>
       ) : (
@@ -170,13 +171,36 @@ function Retrato({
   );
 }
 
-const tooltipStyle = {
-  background: "var(--surface-2)",
-  border: "1px solid var(--border)",
-  borderRadius: 8,
-  color: "var(--foreground)",
-  fontSize: 12,
-};
+function ChartsSkeleton() {
+  return (
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+      <div className="panel p-5 space-y-4">
+        <div className="space-y-1.5">
+          <Skeleton className="h-4 w-56" />
+          <Skeleton className="h-3 w-72" />
+        </div>
+        <div className="flex h-[260px] items-end justify-around gap-3 pt-6">
+          <Skeleton className="h-28 w-12 rounded-t-md" />
+          <Skeleton className="h-44 w-12 rounded-t-md" />
+          <Skeleton className="h-56 w-12 rounded-t-md" />
+          <Skeleton className="h-36 w-12 rounded-t-md" />
+        </div>
+      </div>
+      <div className="panel p-5 space-y-4">
+        <div className="space-y-1.5">
+          <Skeleton className="h-4 w-48" />
+          <Skeleton className="h-3 w-64" />
+        </div>
+        <div className="flex h-[260px] items-end justify-around gap-3 pt-6">
+          <Skeleton className="h-32 w-12 rounded-t-md" />
+          <Skeleton className="h-48 w-12 rounded-t-md" />
+          <Skeleton className="h-40 w-12 rounded-t-md" />
+          <Skeleton className="h-52 w-12 rounded-t-md" />
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function getGameEffectiveYear(game: Game): number | null {
   if (game.data_zerado) {
@@ -201,15 +225,18 @@ function Dashboard() {
     enabled: !!userId,
   });
 
-  const { data: yearTrophies } = useQuery({
+  const { data: yearTrophies, isLoading: isLoadingYearTrophies } = useQuery({
     ...annualTrophiesQuery(targetSyncYear),
     enabled: !!userId && selectedYear !== "All",
   });
 
-  const { data: allTrophies = [] } = useQuery({
+  const { data: allTrophies = [], isLoading: isLoadingAllTrophies } = useQuery({
     ...allAnnualTrophiesQuery,
-    enabled: !!userId && selectedYear === "All",
+    enabled: !!userId,
   });
+
+  const isLoadingTrophies =
+    selectedYear === "All" ? isLoadingAllTrophies : isLoadingYearTrophies;
 
   const displayedTrophies = useMemo(() => {
     if (selectedYear !== "All") return yearTrophies ?? null;
@@ -224,6 +251,17 @@ function Dashboard() {
       { ano: 0, total: 0, steam: 0, psn: 0 },
     );
   }, [selectedYear, yearTrophies, allTrophies]);
+
+  const trophiesByYear = useMemo(() => {
+    return [...allTrophies]
+      .sort((a, b) => a.ano - b.ano)
+      .map((row) => ({
+        ano: String(row.ano),
+        total: row.total || 0,
+        steam: row.steam || 0,
+        psn: row.psn || 0,
+      }));
+  }, [allTrophies]);
 
   const syncTrophiesMutation = useMutation({
     mutationFn: async () => {
@@ -273,13 +311,12 @@ function Dashboard() {
   });
 
   const availableYears = useMemo(() => {
-    const yearsSet = new Set<number>([anoAtual]);
-    games.forEach((j) => {
-      const y = getGameEffectiveYear(j);
-      if (y) yearsSet.add(y);
-    });
-    return Array.from(yearsSet).sort((a, b) => b - a);
-  }, [games, anoAtual]);
+    const years: number[] = [];
+    for (let y = anoAtual; y >= 2015; y--) {
+      years.push(y);
+    }
+    return years;
+  }, [anoAtual]);
 
   const stats = useMemo(() => {
     const allCompleted = games.filter((j) => isCompletedStatus(j.status));
@@ -477,16 +514,23 @@ function Dashboard() {
                   <CheckCircle2 className="h-4 w-4" />
                   Jogos Zerados ({periodLabel})
                 </span>
-                <div className="mt-3 flex items-baseline gap-3">
-                  <span className="font-display text-5xl font-bold tabular-nums text-foreground">
-                    {stats.completed}
-                  </span>
-                  {selectedYear !== "All" && (
-                    <span className="text-xs text-muted-foreground">
-                      de {stats.allTimeCompleted} no total
+                {isLoading ? (
+                  <div className="mt-3 flex items-baseline gap-3">
+                    <Skeleton className="h-12 w-20" />
+                    <Skeleton className="h-4 w-24" />
+                  </div>
+                ) : (
+                  <div className="mt-3 flex items-baseline gap-3">
+                    <span className="font-display text-5xl font-bold tabular-nums text-foreground">
+                      {stats.completed}
                     </span>
-                  )}
-                </div>
+                    {selectedYear !== "All" && (
+                      <span className="text-xs text-muted-foreground">
+                        de {stats.allTimeCompleted} no total
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
               <div className="rounded-xl bg-primary/15 p-3 text-primary">
                 <CheckCircle2 className="h-6 w-6" />
@@ -495,9 +539,16 @@ function Dashboard() {
 
             <div className="mt-6 border-t border-white/10 pt-4 text-xs">
               <span className="text-muted-foreground block">Último zerado</span>
-              <span className="font-medium text-foreground truncate block mt-0.5" title={stats.lastCompleted}>
-                {stats.lastCompleted}
-              </span>
+              {isLoading ? (
+                <Skeleton className="mt-1 h-4 w-40" />
+              ) : (
+                <span
+                  className="font-medium text-foreground truncate block mt-0.5"
+                  title={stats.lastCompleted}
+                >
+                  {stats.lastCompleted}
+                </span>
+              )}
             </div>
           </div>
 
@@ -509,14 +560,21 @@ function Dashboard() {
                   <Trophy className="h-4 w-4" />
                   Platinados ({periodLabel})
                 </span>
-                <div className="mt-3 flex items-baseline gap-3">
-                  <span className="font-display text-5xl font-bold tabular-nums text-platinum">
-                    {stats.platinum}
-                  </span>
-                  <span className="rounded-full bg-platinum/15 px-2 py-0.5 text-[11px] font-semibold text-platinum">
-                    {stats.platinumRate}% dos zerados
-                  </span>
-                </div>
+                {isLoading ? (
+                  <div className="mt-3 flex items-baseline gap-3">
+                    <Skeleton className="h-12 w-16" />
+                    <Skeleton className="h-5 w-28 rounded-full" />
+                  </div>
+                ) : (
+                  <div className="mt-3 flex items-baseline gap-3">
+                    <span className="font-display text-5xl font-bold tabular-nums text-platinum">
+                      {stats.platinum}
+                    </span>
+                    <span className="rounded-full bg-platinum/15 px-2 py-0.5 text-[11px] font-semibold text-platinum">
+                      {stats.platinumRate}% dos zerados
+                    </span>
+                  </div>
+                )}
               </div>
               <div className="rounded-xl bg-platinum/15 p-3 text-platinum">
                 <Trophy className="h-6 w-6" />
@@ -526,15 +584,26 @@ function Dashboard() {
             <div className="mt-6 grid grid-cols-2 gap-2 border-t border-white/10 pt-4 text-xs">
               <div>
                 <span className="text-muted-foreground block">Última platina</span>
-                <span className="font-medium text-foreground truncate block mt-0.5" title={stats.lastPlatinum}>
-                  {stats.lastPlatinum}
-                </span>
+                {isLoading ? (
+                  <Skeleton className="mt-1 h-4 w-28" />
+                ) : (
+                  <span
+                    className="font-medium text-foreground truncate block mt-0.5"
+                    title={stats.lastPlatinum}
+                  >
+                    {stats.lastPlatinum}
+                  </span>
+                )}
               </div>
               <div>
                 <span className="text-muted-foreground block">Total na coleção</span>
-                <span className="font-medium text-foreground block mt-0.5">
-                  {stats.allTimePlatinum} {stats.allTimePlatinum === 1 ? "platina" : "platinas"}
-                </span>
+                {isLoading ? (
+                  <Skeleton className="mt-1 h-4 w-20" />
+                ) : (
+                  <span className="font-medium text-foreground block mt-0.5">
+                    {stats.allTimePlatinum} {stats.allTimePlatinum === 1 ? "platina" : "platinas"}
+                  </span>
+                )}
               </div>
             </div>
           </div>
@@ -547,14 +616,19 @@ function Dashboard() {
                   <Award className="h-4 w-4" />
                   Troféus ({selectedYear === "All" ? "Acumulado" : selectedYear})
                 </span>
-                <div className="mt-3 flex items-baseline gap-3">
-                  <span className="font-display text-5xl font-bold tabular-nums text-amber-400">
-                    {displayedTrophies?.total ?? "—"}
-                  </span>
-                  <span className="text-xs text-muted-foreground">
-                    Steam + PSN
-                  </span>
-                </div>
+                {isLoadingTrophies ? (
+                  <div className="mt-3 flex items-baseline gap-3">
+                    <Skeleton className="h-12 w-24" />
+                    <Skeleton className="h-4 w-20" />
+                  </div>
+                ) : (
+                  <div className="mt-3 flex items-baseline gap-3">
+                    <span className="font-display text-5xl font-bold tabular-nums text-amber-400">
+                      {displayedTrophies?.total ?? "—"}
+                    </span>
+                    <span className="text-xs text-muted-foreground">Steam + PSN</span>
+                  </div>
+                )}
               </div>
 
               <button
@@ -574,15 +648,23 @@ function Dashboard() {
             <div className="mt-6 grid grid-cols-2 gap-2 border-t border-white/10 pt-4 text-xs">
               <div className="flex items-center justify-between rounded-md bg-background/40 px-3 py-1.5">
                 <span className="text-muted-foreground">Steam</span>
-                <span className="font-display font-semibold text-foreground tabular-nums">
-                  {displayedTrophies?.steam ?? "—"}
-                </span>
+                {isLoadingTrophies ? (
+                  <Skeleton className="h-4 w-8" />
+                ) : (
+                  <span className="font-display font-semibold text-foreground tabular-nums">
+                    {displayedTrophies?.steam ?? "—"}
+                  </span>
+                )}
               </div>
               <div className="flex items-center justify-between rounded-md bg-background/40 px-3 py-1.5">
                 <span className="text-muted-foreground">PSN</span>
-                <span className="font-display font-semibold text-foreground tabular-nums">
-                  {displayedTrophies?.psn ?? "—"}
-                </span>
+                {isLoadingTrophies ? (
+                  <Skeleton className="h-4 w-8" />
+                ) : (
+                  <span className="font-display font-semibold text-foreground tabular-nums">
+                    {displayedTrophies?.psn ?? "—"}
+                  </span>
+                )}
               </div>
             </div>
           </div>
@@ -596,9 +678,13 @@ function Dashboard() {
               <p className="text-[11px] uppercase tracking-wider text-muted-foreground">
                 Horas ({periodLabel})
               </p>
-              <p className="font-display text-lg font-semibold tabular-nums">
-                {Math.round(stats.totalHours)}h
-              </p>
+              {isLoading ? (
+                <Skeleton className="mt-1 h-5 w-14" />
+              ) : (
+                <p className="font-display text-lg font-semibold tabular-nums">
+                  {Math.round(stats.totalHours)}h
+                </p>
+              )}
             </div>
           </div>
 
@@ -608,9 +694,13 @@ function Dashboard() {
               <p className="text-[11px] uppercase tracking-wider text-muted-foreground">
                 Nota Média ({periodLabel})
               </p>
-              <p className="font-display text-lg font-semibold tabular-nums">
-                {formatRating(stats.averageRating)}
-              </p>
+              {isLoading ? (
+                <Skeleton className="mt-1 h-5 w-12" />
+              ) : (
+                <p className="font-display text-lg font-semibold tabular-nums">
+                  {formatRating(stats.averageRating)}
+                </p>
+              )}
             </div>
           </div>
 
@@ -620,9 +710,13 @@ function Dashboard() {
               <p className="text-[11px] uppercase tracking-wider text-muted-foreground">
                 Jogando Agora
               </p>
-              <p className="font-display text-lg font-semibold tabular-nums">
-                {stats.playingNow.length} {stats.playingNow.length === 1 ? "jogo" : "jogos"}
-              </p>
+              {isLoading ? (
+                <Skeleton className="mt-1 h-5 w-16" />
+              ) : (
+                <p className="font-display text-lg font-semibold tabular-nums">
+                  {stats.playingNow.length} {stats.playingNow.length === 1 ? "jogo" : "jogos"}
+                </p>
+              )}
             </div>
           </div>
 
@@ -632,114 +726,32 @@ function Dashboard() {
               <p className="text-[11px] uppercase tracking-wider text-muted-foreground">
                 Total na Coleção
               </p>
-              <p className="font-display text-lg font-semibold tabular-nums">
-                {games.length} {games.length === 1 ? "jogo" : "jogos"}
-              </p>
+              {isLoading ? (
+                <Skeleton className="mt-1 h-5 w-16" />
+              ) : (
+                <p className="font-display text-lg font-semibold tabular-nums">
+                  {games.length} {games.length === 1 ? "jogo" : "jogos"}
+                </p>
+              )}
             </div>
           </div>
         </section>
 
-        {/* Gráficos */}
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          <Card
-            titulo="Evolução de jogos concluídos por ano"
-            subtitulo="Clique nas barras ou use o filtro no topo para inspecionar um ano"
-          >
-            <div className="h-[260px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={stats.byYear} margin={{ top: 16, right: 8, left: -20, bottom: 0 }}>
-                  <CartesianGrid vertical={false} stroke="var(--border)" />
-                  <XAxis
-                    dataKey="ano"
-                    tickLine={false}
-                    axisLine={false}
-                    tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
-                  />
-                  <YAxis
-                    allowDecimals={false}
-                    tickLine={false}
-                    axisLine={false}
-                    tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
-                  />
-                  <Tooltip cursor={{ fill: "var(--surface-2)" }} contentStyle={tooltipStyle} />
-                  <Bar
-                    dataKey="total"
-                    radius={[4, 4, 0, 0]}
-                    maxBarSize={54}
-                    className="cursor-pointer"
-                    onClick={(data) => {
-                      if (data?.ano) {
-                        setSelectedYear((prev) =>
-                          prev === String(data.ano) ? "All" : String(data.ano),
-                        );
-                      }
-                    }}
-                  >
-                    {stats.byYear.map((entry) => (
-                      <Cell
-                        key={entry.ano}
-                        fill={
-                          selectedYear === "All" || selectedYear === entry.ano
-                            ? "var(--chart-1)"
-                            : "var(--surface-2)"
-                        }
-                      />
-                    ))}
-                    <LabelList
-                      dataKey="total"
-                      position="top"
-                      style={{ fill: "var(--muted-foreground)", fontSize: 11, fontWeight: 600 }}
-                    />
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </Card>
-
-          <Card
-            titulo={`Jogos por gênero (${periodLabel})`}
-            subtitulo="Distribuição dos gêneros no período selecionado"
-          >
-            <div style={{ height: Math.max(260, stats.genresList.length * 28) }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart
-                  data={stats.genresList}
-                  layout="vertical"
-                  margin={{ top: 4, right: 28, left: 8, bottom: 0 }}
-                >
-                  <CartesianGrid horizontal={false} stroke="var(--border)" />
-                  <XAxis
-                    type="number"
-                    allowDecimals={false}
-                    tickLine={false}
-                    axisLine={false}
-                    tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
-                  />
-                  <YAxis
-                    type="category"
-                    dataKey="genero"
-                    width={110}
-                    interval={0}
-                    tickLine={false}
-                    axisLine={false}
-                    tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
-                  />
-                  <Tooltip cursor={{ fill: "var(--surface-2)" }} contentStyle={tooltipStyle} />
-                  <Bar dataKey="total" radius={[0, 4, 4, 0]} barSize={14}>
-                    {stats.genresList.map((g) => (
-                      <Cell key={g.genero} fill="var(--chart-2)" />
-                    ))}
-                    <LabelList
-                      dataKey="total"
-                      position="right"
-                      style={{ fill: "var(--muted-foreground)", fontSize: 11 }}
-                    />
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </Card>
-        </div>
+        {/* Gráficos (Lazy Loaded) */}
+        {isLoading || isLoadingAllTrophies ? (
+          <ChartsSkeleton />
+        ) : (
+          <Suspense fallback={<ChartsSkeleton />}>
+            <DashboardCharts
+              byYear={stats.byYear}
+              trophiesByYear={trophiesByYear}
+              selectedYear={selectedYear}
+              onSelectYear={(yr) =>
+                setSelectedYear((prev) => (prev === yr ? "All" : yr))
+              }
+            />
+          </Suspense>
+        )}
 
         {/* Seções Lado a Lado: Jogando Agora & Últimos Concluídos */}
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
@@ -765,7 +777,18 @@ function Dashboard() {
               </span>
             </div>
 
-            {stats.playingNow.length ? (
+            {isLoading ? (
+              <div className="flex flex-1 flex-col justify-center gap-3">
+                <div className="flex items-center gap-4 rounded-xl border border-border bg-surface-2/40 p-4">
+                  <Skeleton className="h-[119px] w-[84px] shrink-0 rounded-lg" />
+                  <div className="flex-1 space-y-2.5">
+                    <Skeleton className="h-4 w-24" />
+                    <Skeleton className="h-5 w-40" />
+                    <Skeleton className="h-4 w-28" />
+                  </div>
+                </div>
+              </div>
+            ) : stats.playingNow.length ? (
               <div className="flex flex-1 flex-col justify-center gap-3">
                 {stats.playingNow.map((j) => {
                   const capa = getPortrait(j.imagem);
@@ -780,6 +803,8 @@ function Dashboard() {
                             src={capa}
                             alt=""
                             aria-hidden
+                            loading="lazy"
+                            decoding="async"
                             className="pointer-events-none absolute -right-6 -top-6 h-40 w-40 scale-125 object-cover opacity-15 blur-2xl transition-opacity duration-300 group-hover:opacity-25"
                           />
                         ) : null}
@@ -833,7 +858,20 @@ function Dashboard() {
             className="lg:col-span-7"
           >
             {isLoading ? (
-              <p className="text-sm text-muted-foreground">Carregando…</p>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <div
+                    key={i}
+                    className="overflow-hidden rounded-lg border border-border bg-surface-2/40"
+                  >
+                    <Skeleton className="aspect-[264/374] w-full rounded-none" />
+                    <div className="space-y-1.5 p-2">
+                      <Skeleton className="h-3.5 w-full" />
+                      <Skeleton className="h-3 w-12" />
+                    </div>
+                  </div>
+                ))}
+              </div>
             ) : stats.recentItems.length === 0 ? (
               <p className="text-sm text-muted-foreground py-4">
                 Nenhum jogo concluído neste período.
@@ -848,18 +886,7 @@ function Dashboard() {
                       className="group overflow-hidden rounded-lg border border-border bg-surface-2/40 transition-transform hover:-translate-y-0.5"
                     >
                       <div className="relative aspect-[264/374] w-full overflow-hidden bg-surface-2">
-                        {capa ? (
-                          <img
-                            src={capa}
-                            alt={`Capa de ${j.nome}`}
-                            loading="lazy"
-                            className="h-full w-full object-cover"
-                          />
-                        ) : (
-                          <div className="flex h-full w-full items-center justify-center px-2 text-center font-display text-xs text-muted-foreground">
-                            {j.nome}
-                          </div>
-                        )}
+                        <LazyCoverImage src={capa} alt={`Capa de ${j.nome}`} fallbackText={j.nome} />
                         {j.status === "Platinado" ? (
                           <span className="absolute right-1.5 top-1.5 rounded-full bg-background/85 p-1">
                             <Trophy className="h-3 w-3 text-platinum" />
