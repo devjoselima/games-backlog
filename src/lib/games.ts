@@ -104,3 +104,23 @@ export const annualTrophiesQuery = (ano: number) =>
     queryKey: ["annual-trophies", ano],
     queryFn: () => fetchAnnualTrophies(ano),
   });
+
+export async function fetchAllAnnualTrophies(): Promise<AnnualTrophies[]> {
+  const { data: sessionData } = await supabase.auth.getUser();
+  const uid = sessionData.user?.id;
+  if (!uid) return [];
+
+  const { data, error } = await supabase
+    .from("trofeus_anuais")
+    .select("ano, total, steam, psn, updated_at")
+    .eq("user_id", uid)
+    .order("ano", { ascending: false });
+
+  if (error || !data) return [];
+  return data as AnnualTrophies[];
+}
+
+export const allAnnualTrophiesQuery = queryOptions({
+  queryKey: ["annual-trophies", "all"],
+  queryFn: fetchAllAnnualTrophies,
+});

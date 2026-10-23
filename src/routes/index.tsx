@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
   Bar,
@@ -13,10 +13,34 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { Trophy, CheckCircle2, CalendarDays, Clock, Award, RefreshCw } from "lucide-react";
+import {
+  Trophy,
+  CheckCircle2,
+  Clock,
+  Award,
+  RefreshCw,
+  Gamepad2,
+  Sparkles,
+  ArrowRight,
+} from "lucide-react";
 
 import { AppHeader } from "@/components/AppHeader";
-import { gamesQuery, annualTrophiesQuery, formatRating, isCompletedStatus, type Game } from "@/lib/games";
+import { EditGameModal } from "@/components/EditGameModal";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  gamesQuery,
+  annualTrophiesQuery,
+  allAnnualTrophiesQuery,
+  formatRating,
+  isCompletedStatus,
+  type Game,
+} from "@/lib/games";
 import { syncAnnualTrophies } from "@/lib/trophies.server";
 import { supabase } from "@/integrations/supabase/client";
 import { useSessaoUsuario } from "@/lib/use-session";
@@ -50,25 +74,25 @@ export function translateGenres(generoString: string | null | undefined): string
   if (!generoString || !generoString.trim()) return "Outros";
   return generoString
     .split(",")
-    .map(g => g.trim())
-    .map(g => GENRE_TRANSLATIONS[g] || g)
+    .map((g) => g.trim())
+    .map((g) => GENRE_TRANSLATIONS[g] || g)
     .join(", ");
 }
 
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Backlog do José | Jogos completed e platinum" },
+      { title: "Backlog de games | Jogos zerados, platinas e troféus" },
       {
         name: "description",
         content:
-          "Dashboard pessoal de games completed e platinum: últimos games jogados, notas, gêneros e estatísticas por ano.",
+          "Dashboard pessoal de games zerados, platinados e troféus conquistados por ano.",
       },
-      { property: "og:title", content: "Backlog do José | Jogos completed e platinum" },
+      { property: "og:title", content: "Backlog de games | Jogos zerados, platinas e troféus" },
       {
         property: "og:description",
         content:
-          "Últimos games jogados, contadores de completed e platinum, notas e gráficos por ano e gênero.",
+          "Estatísticas de jogos zerados, platinas, troféus na Steam e PSN, notas e gráficos por ano e gênero.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
@@ -79,36 +103,30 @@ export const Route = createFileRoute("/")({
 
 const currentYear = () => new Date().getFullYear();
 
-function Stat({
-  titulo,
-  valor,
-  Icon,
-}: {
-  titulo: string;
-  valor: string | number;
-  Icon: typeof Trophy;
-}) {
-  return (
-    <div className="panel flex flex-col items-center gap-1 px-4 py-5">
-      <Icon className="h-4 w-4 text-primary" />
-      <span className="font-display text-3xl font-semibold tabular-nums">{valor}</span>
-      <span className="text-xs uppercase tracking-wider text-muted-foreground">{titulo}</span>
-    </div>
-  );
-}
-
 function Card({
   titulo,
+  subtitulo,
+  action,
   children,
   className = "",
 }: {
   titulo: string;
+  subtitulo?: string;
+  action?: React.ReactNode;
   children: React.ReactNode;
   className?: string;
 }) {
   return (
     <section className={`panel p-5 ${className}`}>
-      <h2 className="mb-4 text-sm font-semibold text-muted-foreground">{titulo}</h2>
+      <div className="mb-4 flex items-center justify-between gap-2">
+        <div>
+          <h2 className="text-sm font-semibold text-foreground">{titulo}</h2>
+          {subtitulo ? (
+            <p className="text-xs text-muted-foreground">{subtitulo}</p>
+          ) : null}
+        </div>
+        {action}
+      </div>
       {children}
     </section>
   );
@@ -118,7 +136,7 @@ function Card({
 function Retrato({
   nome,
   src,
-  tamanho = 156,
+  tamanho = 76,
 }: {
   nome: string;
   src: string | null;
@@ -127,7 +145,7 @@ function Retrato({
   const height = Math.round(tamanho * (374 / 264));
   return (
     <div
-      className="relative flex shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border bg-surface-2 shadow-lg"
+      className="relative flex shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border bg-surface-2 shadow-md"
       style={{ width: tamanho, height }}
     >
       {src ? (
@@ -146,13 +164,11 @@ function Retrato({
           />
         </>
       ) : (
-        <span className="px-2 text-center text-xs text-muted-foreground">{nome}</span>
+        <span className="px-2 text-center text-[10px] text-muted-foreground">{nome}</span>
       )}
     </div>
   );
 }
-
-
 
 const tooltipStyle = {
   background: "var(--surface-2)",
@@ -162,25 +178,57 @@ const tooltipStyle = {
   fontSize: 12,
 };
 
+function getGameEffectiveYear(game: Game): number | null {
+  if (game.data_zerado) {
+    return Number(game.data_zerado.split("-")[0]);
+  }
+  if (game.data_platinado) {
+    return Number(game.data_platinado.split("-")[0]);
+  }
+  return game.ano_jogado ?? null;
+}
+
 function Dashboard() {
   const userId = useSessaoUsuario();
   const queryClient = useQueryClient();
   const anoAtual = currentYear();
+  const [selectedYear, setSelectedYear] = useState<string>(String(anoAtual));
+
+  const targetSyncYear = selectedYear === "All" ? anoAtual : Number(selectedYear);
 
   const { data: games = [], isLoading, error } = useQuery({
     ...gamesQuery,
     enabled: !!userId,
   });
 
-  const { data: annualTrophies } = useQuery({
-    ...annualTrophiesQuery(anoAtual),
-    enabled: !!userId,
+  const { data: yearTrophies } = useQuery({
+    ...annualTrophiesQuery(targetSyncYear),
+    enabled: !!userId && selectedYear !== "All",
   });
+
+  const { data: allTrophies = [] } = useQuery({
+    ...allAnnualTrophiesQuery,
+    enabled: !!userId && selectedYear === "All",
+  });
+
+  const displayedTrophies = useMemo(() => {
+    if (selectedYear !== "All") return yearTrophies ?? null;
+    if (!allTrophies.length) return null;
+    return allTrophies.reduce(
+      (acc, row) => ({
+        ano: 0,
+        total: acc.total + (row.total || 0),
+        steam: acc.steam + (row.steam || 0),
+        psn: acc.psn + (row.psn || 0),
+      }),
+      { ano: 0, total: 0, steam: 0, psn: 0 },
+    );
+  }, [selectedYear, yearTrophies, allTrophies]);
 
   const syncTrophiesMutation = useMutation({
     mutationFn: async () => {
       if (!userId) throw new Error("Sessão expirada.");
-      const result = await syncAnnualTrophies({ data: { ano: anoAtual } });
+      const result = await syncAnnualTrophies({ data: { ano: targetSyncYear } });
 
       const payload = {
         user_id: userId,
@@ -195,7 +243,6 @@ function Dashboard() {
         .upsert(payload, { onConflict: "user_id,ano" });
 
       if (upsertError) {
-        // Fallback para user_metadata caso a migration da tabela ainda não tenha sido aplicada no banco remoto
         await supabase.auth.updateUser({
           data: {
             [`trofeus_${result.ano}`]: {
@@ -212,7 +259,7 @@ function Dashboard() {
       return result;
     },
     onSuccess: (res) => {
-      queryClient.invalidateQueries({ queryKey: ["annual-trophies", anoAtual] });
+      queryClient.invalidateQueries({ queryKey: ["annual-trophies"] });
       toast.success(
         `Troféus de ${res.ano} sincronizados! Total: ${res.total} (Steam: ${res.steam} · PSN: ${res.psn})`,
       );
@@ -225,33 +272,71 @@ function Dashboard() {
     },
   });
 
+  const availableYears = useMemo(() => {
+    const yearsSet = new Set<number>([anoAtual]);
+    games.forEach((j) => {
+      const y = getGameEffectiveYear(j);
+      if (y) yearsSet.add(y);
+    });
+    return Array.from(yearsSet).sort((a, b) => b - a);
+  }, [games, anoAtual]);
+
   const stats = useMemo(() => {
-    const completedList = games.filter((j) => isCompletedStatus(j.status));
-    const platinum = games.filter((j) => j.status === "Platinado");
-    const thisYear = completedList.filter((j) => j.ano_jogado === currentYear());
-    const hoursYear = games
-      .filter((j) => j.ano_jogado === currentYear() && j.horas_jogadas)
+    const allCompleted = games.filter((j) => isCompletedStatus(j.status));
+    const allPlatinum = games.filter((j) => j.status === "Platinado");
+
+    const matchesYear = (j: Game) => {
+      if (selectedYear === "All") return true;
+      return String(getGameEffectiveYear(j)) === selectedYear;
+    };
+
+    const filteredCompleted = allCompleted.filter(matchesYear);
+    const filteredPlatinum = allPlatinum.filter((j) => {
+      if (selectedYear === "All") return true;
+      const platYear = j.data_platinado
+        ? j.data_platinado.split("-")[0]
+        : String(getGameEffectiveYear(j));
+      return platYear === selectedYear;
+    });
+
+    const hoursList = filteredCompleted
+      .filter((j) => j.horas_jogadas)
       .map((j) => Number(j.horas_jogadas));
-    const average = hoursYear.length
-      ? hoursYear.reduce((a, b) => a + b, 0) / hoursYear.length
+    const totalHours = hoursList.reduce((a, b) => a + b, 0);
+    const averageHours = hoursList.length ? totalHours / hoursList.length : 0;
+
+    const ratingsList = filteredCompleted
+      .filter((j) => j.nota !== null && j.nota !== undefined)
+      .map((j) => Number(j.nota));
+    const averageRating = ratingsList.length
+      ? ratingsList.reduce((a, b) => a + b, 0) / ratingsList.length
+      : null;
+
+    const platinumRate = filteredCompleted.length
+      ? Math.round((filteredPlatinum.length / filteredCompleted.length) * 100)
       : 0;
 
     const byYearMap = new Map<number, number>();
-    completedList.forEach((j) => {
-      if (!j.ano_jogado) return;
-      byYearMap.set(j.ano_jogado, (byYearMap.get(j.ano_jogado) ?? 0) + 1);
+    allCompleted.forEach((j) => {
+      const y = getGameEffectiveYear(j);
+      if (!y) return;
+      byYearMap.set(y, (byYearMap.get(y) ?? 0) + 1);
     });
     const byYear = [...byYearMap.entries()]
       .sort((a, b) => a[0] - b[0])
       .map(([ano, total]) => ({ ano: String(ano), total }));
 
+    const genreSource = selectedYear === "All" ? games : filteredCompleted;
     const genreMap = new Map<string, number>();
-    games.forEach((j) => {
+    genreSource.forEach((j) => {
       if (!j.genero || !j.genero.trim()) {
         genreMap.set("Outros", (genreMap.get("Outros") ?? 0) + 1);
       } else {
-        const generosArray = j.genero.split(",").map(g => g.trim()).filter(Boolean);
-        generosArray.forEach(g => {
+        const generosArray = j.genero
+          .split(",")
+          .map((g) => g.trim())
+          .filter(Boolean);
+        generosArray.forEach((g) => {
           const ptBr = GENRE_TRANSLATIONS[g] || g;
           genreMap.set(ptBr, (genreMap.get(ptBr) ?? 0) + 1);
         });
@@ -261,7 +346,17 @@ function Dashboard() {
       .sort((a, b) => a[1] - b[1])
       .map(([genero, total]) => ({ genero, total }));
 
-    const lastItem = (arr: Game[]) => {
+    const lastCompletedItem = (arr: Game[]) => {
+      if (!arr.length) return "—";
+      const sorted = [...arr].sort((a, b) => {
+        const dA = new Date(a.data_zerado || a.created_at).getTime();
+        const dB = new Date(b.data_zerado || b.created_at).getTime();
+        return dA - dB;
+      });
+      return sorted[sorted.length - 1].nome;
+    };
+
+    const lastPlatinumItem = (arr: Game[]) => {
       if (!arr.length) return "—";
       const sorted = [...arr].sort((a, b) => {
         const dA = new Date(a.data_platinado || a.data_zerado || a.created_at).getTime();
@@ -271,31 +366,32 @@ function Dashboard() {
       return sorted[sorted.length - 1].nome;
     };
 
-    const sortedCompleted = [...completedList].sort((a, b) => {
-      const dateA = new Date(a.data_platinado || a.data_zerado || a.created_at).getTime();
-      const dateB = new Date(b.data_platinado || b.data_zerado || b.created_at).getTime();
-      return dateB - dateA; // Descending order
+    const sortedCompleted = [...filteredCompleted].sort((a, b) => {
+      const dateA = new Date(a.data_zerado || a.created_at).getTime();
+      const dateB = new Date(b.data_zerado || b.created_at).getTime();
+      return dateB - dateA;
     });
     const recentItems = sortedCompleted.slice(0, 5);
 
     return {
-      completed: completedList.length,
-      platinum: platinum.length,
-      thisYear: thisYear.length,
-      average,
+      completed: filteredCompleted.length,
+      allTimeCompleted: allCompleted.length,
+      platinum: filteredPlatinum.length,
+      allTimePlatinum: allPlatinum.length,
+      platinumRate,
+      totalHours,
+      averageHours,
+      averageRating,
       byYear,
       genresList,
       recentItems,
-      lastCompleted: lastItem(completedList.filter((j) => j.status === "Zerado")),
-      lastPlatinum: lastItem(platinum),
+      lastCompleted: lastCompletedItem(filteredCompleted),
+      lastPlatinum: lastPlatinumItem(filteredPlatinum),
       playingNow: games.filter((j) => j.status === "Jogando"),
     };
-  }, [games]);
+  }, [games, selectedYear]);
 
-  const getPortrait = (fixedImage: string | null) => {
-    return fixedImage ?? null;
-  };
-
+  const getPortrait = (fixedImage: string | null) => fixedImage ?? null;
 
   if (userId === null) {
     return (
@@ -317,167 +413,238 @@ function Dashboard() {
     );
   }
 
+  const periodLabel = selectedYear === "All" ? "Todos os anos" : selectedYear;
+
   return (
     <div className="min-h-screen bg-background">
       <AppHeader />
 
-      <main className="mx-auto max-w-6xl space-y-8 px-5 py-8">
+      <main className="mx-auto max-w-6xl space-y-6 px-5 py-8">
         {error ? (
           <p className="text-sm text-destructive">
             Não foi possível carregar os games. Recarregue a página.
           </p>
         ) : null}
 
-        {/* Hero / últimos jogados */}
-        <section className="hero-band overflow-hidden p-6">
-          <div className="mb-5 flex flex-wrap items-end justify-between gap-2">
-            <div>
-              <h1 className="font-display text-2xl font-semibold">
-                Bem-vindo de volta, José
-              </h1>
-              <p className="text-sm text-muted-foreground">
-                Seus últimos 5 games jogados
-              </p>
+        {/* Cabeçalho + Filtro de Ano */}
+        <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between border-b border-border pb-5">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-widest text-primary">
+              Visão Geral · {periodLabel}
+            </p>
+            <h1 className="mt-1 font-display text-2xl sm:text-3xl font-bold tracking-tight">
+              Bem-vindo de volta, José
+            </h1>
+          </div>
+
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="flex flex-col gap-1">
+              <label className="text-[11px] font-medium text-muted-foreground">
+                Filtrar por ano
+              </label>
+              <Select value={selectedYear} onValueChange={setSelectedYear}>
+                <SelectTrigger className="w-[150px] bg-surface-2 border-border h-9 text-sm font-medium">
+                  <SelectValue placeholder="Selecione o ano" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="All">Todos os anos</SelectItem>
+                  {availableYears.map((y) => (
+                    <SelectItem key={y} value={String(y)}>
+                      {y}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
+
             <Link
               to="/profile"
-              className="text-sm font-medium text-primary hover:underline"
+              className="inline-flex h-9 items-center gap-1.5 rounded-md border border-border bg-surface-2 px-3.5 text-xs font-semibold text-foreground transition-colors hover:border-primary/50 hover:text-primary"
             >
               Gerenciar coleção
+              <ArrowRight className="h-3.5 w-3.5" />
             </Link>
           </div>
+        </header>
 
-          {isLoading ? (
-            <p className="text-sm text-muted-foreground">Carregando…</p>
-          ) : stats.recentItems.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Nenhum jogo concluído ainda.</p>
-          ) : (
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-5">
-              {stats.recentItems.map((j) => {
-                const capa = getPortrait(j.imagem);
-                return (
-                  <article
-                    key={j.id}
-                    className="group overflow-hidden rounded-lg border border-border bg-surface transition-transform hover:-translate-y-1"
-                  >
-                    <div className="relative aspect-[264/374] w-full overflow-hidden bg-surface-2">
-                      {capa ? (
-                        <img
-                          src={capa}
-                          alt={`Capa de ${j.nome}`}
-                          loading="lazy"
-                          className="h-full w-full object-cover"
-                        />
-                      ) : (
-                        <div className="flex h-full w-full items-center justify-center px-2 text-center font-display text-sm text-muted-foreground">
-                          {j.nome}
-                        </div>
-                      )}
-                      {j.status === "Platinado" ? (
-                        <span className="absolute right-2 top-2 rounded-full bg-background/80 p-1">
-                          <Trophy className="h-3.5 w-3.5 text-platinum" />
-                        </span>
-                      ) : null}
-                    </div>
-                    <div className="space-y-1 p-3">
-                      <p className="truncate text-sm font-medium" title={j.nome}>
-                        {j.nome}
-                      </p>
-                      <p className="flex items-center justify-between text-xs text-muted-foreground">
-                        <span>{j.ano_jogado ?? "—"}</span>
-                        <span className="font-semibold text-primary">
-                          {formatRating(j.nota)}
-                        </span>
-                      </p>
-                    </div>
-                  </article>
-                );
-              })}
+        {/* Destaques Principais: Zerados, Platinados e Troféus */}
+        <section className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          {/* Card 1: Jogos Zerados */}
+          <div className="relative overflow-hidden rounded-xl border border-primary/30 bg-gradient-to-br from-[#281822] via-surface to-surface p-6 shadow-lg">
+            <div className="flex items-start justify-between">
+              <div>
+                <span className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-primary">
+                  <CheckCircle2 className="h-4 w-4" />
+                  Jogos Zerados ({periodLabel})
+                </span>
+                <div className="mt-3 flex items-baseline gap-3">
+                  <span className="font-display text-5xl font-bold tabular-nums text-foreground">
+                    {stats.completed}
+                  </span>
+                  {selectedYear !== "All" && (
+                    <span className="text-xs text-muted-foreground">
+                      de {stats.allTimeCompleted} no total
+                    </span>
+                  )}
+                </div>
+              </div>
+              <div className="rounded-xl bg-primary/15 p-3 text-primary">
+                <CheckCircle2 className="h-6 w-6" />
+              </div>
             </div>
-          )}
+
+            <div className="mt-6 border-t border-white/10 pt-4 text-xs">
+              <span className="text-muted-foreground block">Último zerado</span>
+              <span className="font-medium text-foreground truncate block mt-0.5" title={stats.lastCompleted}>
+                {stats.lastCompleted}
+              </span>
+            </div>
+          </div>
+
+          {/* Card 2: Platinados */}
+          <div className="relative overflow-hidden rounded-xl border border-platinum/30 bg-gradient-to-br from-[#162432] via-surface to-surface p-6 shadow-lg">
+            <div className="flex items-start justify-between">
+              <div>
+                <span className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-platinum">
+                  <Trophy className="h-4 w-4" />
+                  Platinados ({periodLabel})
+                </span>
+                <div className="mt-3 flex items-baseline gap-3">
+                  <span className="font-display text-5xl font-bold tabular-nums text-platinum">
+                    {stats.platinum}
+                  </span>
+                  <span className="rounded-full bg-platinum/15 px-2 py-0.5 text-[11px] font-semibold text-platinum">
+                    {stats.platinumRate}% dos zerados
+                  </span>
+                </div>
+              </div>
+              <div className="rounded-xl bg-platinum/15 p-3 text-platinum">
+                <Trophy className="h-6 w-6" />
+              </div>
+            </div>
+
+            <div className="mt-6 grid grid-cols-2 gap-2 border-t border-white/10 pt-4 text-xs">
+              <div>
+                <span className="text-muted-foreground block">Última platina</span>
+                <span className="font-medium text-foreground truncate block mt-0.5" title={stats.lastPlatinum}>
+                  {stats.lastPlatinum}
+                </span>
+              </div>
+              <div>
+                <span className="text-muted-foreground block">Total na coleção</span>
+                <span className="font-medium text-foreground block mt-0.5">
+                  {stats.allTimePlatinum} {stats.allTimePlatinum === 1 ? "platina" : "platinas"}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Card 3: Troféus Conquistados */}
+          <div className="relative overflow-hidden rounded-xl border border-amber-500/30 bg-gradient-to-br from-[#292218] via-surface to-surface p-6 shadow-lg">
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <span className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-amber-400">
+                  <Award className="h-4 w-4" />
+                  Troféus ({selectedYear === "All" ? "Acumulado" : selectedYear})
+                </span>
+                <div className="mt-3 flex items-baseline gap-3">
+                  <span className="font-display text-5xl font-bold tabular-nums text-amber-400">
+                    {displayedTrophies?.total ?? "—"}
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    Steam + PSN
+                  </span>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => syncTrophiesMutation.mutate()}
+                disabled={syncTrophiesMutation.isPending}
+                title={`Sincronizar troféus de ${targetSyncYear} (Steam + PSN)`}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold text-amber-300 transition-colors hover:bg-amber-500/20 disabled:opacity-50 cursor-pointer shrink-0"
+              >
+                <RefreshCw
+                  className={`h-3.5 w-3.5 ${syncTrophiesMutation.isPending ? "animate-spin" : ""}`}
+                />
+                {syncTrophiesMutation.isPending ? "Sincronizando…" : `Sync ${targetSyncYear}`}
+              </button>
+            </div>
+
+            <div className="mt-6 grid grid-cols-2 gap-2 border-t border-white/10 pt-4 text-xs">
+              <div className="flex items-center justify-between rounded-md bg-background/40 px-3 py-1.5">
+                <span className="text-muted-foreground">Steam</span>
+                <span className="font-display font-semibold text-foreground tabular-nums">
+                  {displayedTrophies?.steam ?? "—"}
+                </span>
+              </div>
+              <div className="flex items-center justify-between rounded-md bg-background/40 px-3 py-1.5">
+                <span className="text-muted-foreground">PSN</span>
+                <span className="font-display font-semibold text-foreground tabular-nums">
+                  {displayedTrophies?.psn ?? "—"}
+                </span>
+              </div>
+            </div>
+          </div>
         </section>
 
-        {/* Contadores */}
-        <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
-          <Stat titulo="Zerados" valor={stats.completed} Icon={CheckCircle2} />
-          <Stat titulo="Este ano" valor={stats.thisYear} Icon={CalendarDays} />
-          <Stat titulo="Platinados" valor={stats.platinum} Icon={Trophy} />
-          <Stat
-            titulo={`Média ${anoAtual}`}
-            valor={`${stats.average.toFixed(1).replace(".", ",")}h`}
-            Icon={Clock}
-          />
-          <div className="panel relative flex flex-col items-center justify-center gap-1 px-4 py-5 col-span-2 md:col-span-1">
-            <button
-              type="button"
-              onClick={() => syncTrophiesMutation.mutate()}
-              disabled={syncTrophiesMutation.isPending}
-              title="Sincronizar troféus (Steam + PSN)"
-              className="absolute right-2.5 top-2.5 rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground disabled:opacity-50 cursor-pointer"
-            >
-              <RefreshCw
-                className={`h-3.5 w-3.5 ${syncTrophiesMutation.isPending ? "animate-spin text-primary" : ""}`}
-              />
-            </button>
-            <Award className="h-4 w-4 text-primary" />
-            <span className="font-display text-3xl font-semibold tabular-nums">
-              {annualTrophies?.total ?? "—"}
-            </span>
-            <span className="text-xs uppercase tracking-wider text-muted-foreground">
-              Troféus {anoAtual}
-            </span>
-            {annualTrophies ? (
-              <span className="text-[11px] text-muted-foreground">
-                Steam: {annualTrophies.steam} · PSN: {annualTrophies.psn}
-              </span>
-            ) : (
-              <span className="text-[11px] text-muted-foreground">
-                Clique em ↻ para sincronizar
-              </span>
-            )}
-          </div>
-        </div>
-
-        {/* Jogando agora */}
-        <Card titulo="Jogando agora">
-          {stats.playingNow.length ? (
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {stats.playingNow.map((j) => (
-                <article
-                  key={j.id}
-                  className="group flex items-center gap-4 rounded-xl border border-border bg-surface p-3 transition-all duration-300 hover:-translate-y-1 hover:border-primary/50 hover:shadow-lg"
-                >
-                  <Retrato nome={j.nome} src={getPortrait(j.imagem)} tamanho={120} />
-                  <div className="min-w-0 flex-1 space-y-1">
-                    <p className="truncate font-display text-sm font-semibold" title={j.nome}>
-                      {j.nome}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {j.plataforma} · {translateGenres(j.genero)}
-                    </p>
-                    <div className="flex items-center gap-3 pt-1">
-                      <span className="text-xs font-medium text-primary">
-                        {formatRating(j.nota)}
-                      </span>
-                      {j.horas_jogadas ? (
-                        <span className="text-xs text-muted-foreground">
-                          {j.horas_jogadas}h
-                        </span>
-                      ) : null}
-                    </div>
-                  </div>
-                </article>
-              ))}
+        {/* Faixa Secundária de Indicadores Rápidos */}
+        <section className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+          <div className="panel flex items-center gap-3 px-4 py-3.5">
+            <Clock className="h-4 w-4 text-primary shrink-0" />
+            <div>
+              <p className="text-[11px] uppercase tracking-wider text-muted-foreground">
+                Horas ({periodLabel})
+              </p>
+              <p className="font-display text-lg font-semibold tabular-nums">
+                {Math.round(stats.totalHours)}h
+              </p>
             </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">Nada em andamento</p>
-          )}
-        </Card>
+          </div>
 
+          <div className="panel flex items-center gap-3 px-4 py-3.5">
+            <Sparkles className="h-4 w-4 text-amber-400 shrink-0" />
+            <div>
+              <p className="text-[11px] uppercase tracking-wider text-muted-foreground">
+                Nota Média ({periodLabel})
+              </p>
+              <p className="font-display text-lg font-semibold tabular-nums">
+                {formatRating(stats.averageRating)}
+              </p>
+            </div>
+          </div>
+
+          <div className="panel flex items-center gap-3 px-4 py-3.5">
+            <Gamepad2 className="h-4 w-4 text-emerald-400 shrink-0" />
+            <div>
+              <p className="text-[11px] uppercase tracking-wider text-muted-foreground">
+                Jogando Agora
+              </p>
+              <p className="font-display text-lg font-semibold tabular-nums">
+                {stats.playingNow.length} {stats.playingNow.length === 1 ? "jogo" : "jogos"}
+              </p>
+            </div>
+          </div>
+
+          <div className="panel flex items-center gap-3 px-4 py-3.5">
+            <CheckCircle2 className="h-4 w-4 text-purple-400 shrink-0" />
+            <div>
+              <p className="text-[11px] uppercase tracking-wider text-muted-foreground">
+                Total na Coleção
+              </p>
+              <p className="font-display text-lg font-semibold tabular-nums">
+                {games.length} {games.length === 1 ? "jogo" : "jogos"}
+              </p>
+            </div>
+          </div>
+        </section>
 
         {/* Gráficos */}
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          <Card titulo="Zerados por ano">
+          <Card
+            titulo="Evolução de jogos concluídos por ano"
+            subtitulo="Clique nas barras ou use o filtro no topo para inspecionar um ano"
+          >
             <div className="h-[260px]">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={stats.byYear} margin={{ top: 16, right: 8, left: -20, bottom: 0 }}>
@@ -495,7 +662,29 @@ function Dashboard() {
                     tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
                   />
                   <Tooltip cursor={{ fill: "var(--surface-2)" }} contentStyle={tooltipStyle} />
-                  <Bar dataKey="total" fill="var(--chart-1)" radius={[4, 4, 0, 0]} maxBarSize={54}>
+                  <Bar
+                    dataKey="total"
+                    radius={[4, 4, 0, 0]}
+                    maxBarSize={54}
+                    className="cursor-pointer"
+                    onClick={(data) => {
+                      if (data?.ano) {
+                        setSelectedYear((prev) =>
+                          prev === String(data.ano) ? "All" : String(data.ano),
+                        );
+                      }
+                    }}
+                  >
+                    {stats.byYear.map((entry) => (
+                      <Cell
+                        key={entry.ano}
+                        fill={
+                          selectedYear === "All" || selectedYear === entry.ano
+                            ? "var(--chart-1)"
+                            : "var(--surface-2)"
+                        }
+                      />
+                    ))}
                     <LabelList
                       dataKey="total"
                       position="top"
@@ -507,7 +696,10 @@ function Dashboard() {
             </div>
           </Card>
 
-          <Card titulo="Jogos por gênero">
+          <Card
+            titulo={`Jogos por gênero (${periodLabel})`}
+            subtitulo="Distribuição dos gêneros no período selecionado"
+          >
             <div style={{ height: Math.max(260, stats.genresList.length * 28) }}>
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart
@@ -546,6 +738,150 @@ function Dashboard() {
                 </BarChart>
               </ResponsiveContainer>
             </div>
+          </Card>
+        </div>
+
+        {/* Seções Lado a Lado: Jogando Agora & Últimos Concluídos */}
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
+          {/* Jogando Agora */}
+          <section className="panel flex flex-col p-5 lg:col-span-5">
+            <div className="mb-4 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <span className="relative flex h-2.5 w-2.5">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+                  <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500" />
+                </span>
+                <div>
+                  <h2 className="text-sm font-semibold text-foreground">
+                    Jogando agora
+                  </h2>
+                  <p className="text-xs text-muted-foreground">
+                    Títulos atualmente em andamento
+                  </p>
+                </div>
+              </div>
+              <span className="rounded-full bg-emerald-500/15 px-2.5 py-0.5 text-xs font-semibold text-emerald-400">
+                {stats.playingNow.length}
+              </span>
+            </div>
+
+            {stats.playingNow.length ? (
+              <div className="flex flex-1 flex-col justify-center gap-3">
+                {stats.playingNow.map((j) => {
+                  const capa = getPortrait(j.imagem);
+                  return (
+                    <EditGameModal key={j.id} jogo={j} capa={capa}>
+                      <button
+                        type="button"
+                        className="group relative flex w-full items-center gap-4 overflow-hidden rounded-xl border border-emerald-500/25 bg-gradient-to-br from-[#142620] via-surface to-surface p-4 text-left shadow-lg transition-all duration-300 hover:-translate-y-0.5 hover:border-emerald-400/50 hover:shadow-xl cursor-pointer"
+                      >
+                        {capa ? (
+                          <img
+                            src={capa}
+                            alt=""
+                            aria-hidden
+                            className="pointer-events-none absolute -right-6 -top-6 h-40 w-40 scale-125 object-cover opacity-15 blur-2xl transition-opacity duration-300 group-hover:opacity-25"
+                          />
+                        ) : null}
+
+                        <Retrato nome={j.nome} src={capa} tamanho={84} />
+
+                        <div className="relative z-10 flex min-w-0 flex-1 flex-col justify-between gap-2.5">
+                          <div>
+                            <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
+                              {j.plataforma ? (
+                                <span className="rounded-md border border-emerald-500/30 bg-emerald-500/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-emerald-300">
+                                  {j.plataforma}
+                                </span>
+                              ) : null}
+                              <span className="truncate text-[11px] text-muted-foreground">
+                                {translateGenres(j.genero)}
+                              </span>
+                            </div>
+
+                            <p
+                              className="line-clamp-2 font-display text-base font-bold leading-snug text-foreground transition-colors group-hover:text-emerald-300"
+                              title={j.nome}
+                            >
+                              {j.nome}
+                            </p>
+                          </div>
+
+                          <div className="flex items-center gap-3 border-t border-white/10 pt-2.5 text-xs">
+                            <span className="inline-flex items-center gap-1.5 font-medium text-emerald-400">
+                              <Clock className="h-3.5 w-3.5" />
+                              {j.horas_jogadas ? `${j.horas_jogadas}h jogadas` : "Recém iniciado"}
+                            </span>
+                          </div>
+                        </div>
+                      </button>
+                    </EditGameModal>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="flex flex-1 items-center justify-center py-8 text-sm text-muted-foreground">
+                Nenhum jogo em andamento no momento.
+              </div>
+            )}
+          </section>
+
+          {/* Últimos 5 concluídos (compacto) */}
+          <Card
+            titulo={`Últimos concluídos (${periodLabel})`}
+            subtitulo="Os 5 jogos finalizados mais recentemente no período"
+            className="lg:col-span-7"
+          >
+            {isLoading ? (
+              <p className="text-sm text-muted-foreground">Carregando…</p>
+            ) : stats.recentItems.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-4">
+                Nenhum jogo concluído neste período.
+              </p>
+            ) : (
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+                {stats.recentItems.map((j) => {
+                  const capa = getPortrait(j.imagem);
+                  return (
+                    <article
+                      key={j.id}
+                      className="group overflow-hidden rounded-lg border border-border bg-surface-2/40 transition-transform hover:-translate-y-0.5"
+                    >
+                      <div className="relative aspect-[264/374] w-full overflow-hidden bg-surface-2">
+                        {capa ? (
+                          <img
+                            src={capa}
+                            alt={`Capa de ${j.nome}`}
+                            loading="lazy"
+                            className="h-full w-full object-cover"
+                          />
+                        ) : (
+                          <div className="flex h-full w-full items-center justify-center px-2 text-center font-display text-xs text-muted-foreground">
+                            {j.nome}
+                          </div>
+                        )}
+                        {j.status === "Platinado" ? (
+                          <span className="absolute right-1.5 top-1.5 rounded-full bg-background/85 p-1">
+                            <Trophy className="h-3 w-3 text-platinum" />
+                          </span>
+                        ) : null}
+                      </div>
+                      <div className="space-y-0.5 p-2">
+                        <p className="truncate text-xs font-medium" title={j.nome}>
+                          {j.nome}
+                        </p>
+                        <p className="flex items-center justify-between text-[11px] text-muted-foreground">
+                          <span>{getGameEffectiveYear(j) ?? "—"}</span>
+                          <span className="font-semibold text-primary">
+                            {formatRating(j.nota)}
+                          </span>
+                        </p>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            )}
           </Card>
         </div>
       </main>
