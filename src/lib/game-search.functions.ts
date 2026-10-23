@@ -9,7 +9,7 @@ export type GameSuggestion = {
 };
 
 export const searchGames = createServerFn({ method: "GET" })
-  .inputValidator((input: { termo: string }) => ({
+  .validator((input: { termo: string }) => ({
     termo: String(input?.termo ?? "").slice(0, 80),
   }))
   .handler(async ({ data }): Promise<GameSuggestion[]> => {

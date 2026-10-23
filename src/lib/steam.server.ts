@@ -32,7 +32,7 @@ export type SyncResult = {
 };
 
 export const syncSteamLibrary = createServerFn({ method: "POST" })
-  .inputValidator((input: { steamId: string; localGames: { id: string; nome: string; status: string; horas_jogadas: number | null }[] }) => input)
+  .validator((input: { steamId: string; localGames: { id: string; nome: string; status: string; horas_jogadas: number | null }[] }) => input)
   .handler(async ({ data }): Promise<SyncResult[]> => {
     const { steamId, localGames } = data;
     const apiKey = process.env["STEAM_API_KEY"];
