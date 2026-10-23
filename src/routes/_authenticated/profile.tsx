@@ -79,7 +79,13 @@ function Perfil() {
   const playing = games.filter((j) => j.status === "Jogando");
   const backlog = games.filter((j) => j.status === "Quero jogar" || j.status === "Pausado");
   const completed = games.filter((j) => j.status === "Zerado" || j.status === "Platinado");
-  const platinum = games.filter((j) => j.status === "Platinado");
+  const platinum = [...games.filter((j) => j.status === "Platinado")].sort((a, b) => {
+    const dateA = a.data_platinado || a.data_zerado || a.created_at;
+    const dateB = b.data_platinado || b.data_zerado || b.created_at;
+    const timeA = dateA ? new Date(dateA).getTime() : 0;
+    const timeB = dateB ? new Date(dateB).getTime() : 0;
+    return timeB - timeA;
+  });
 
   let gamesToShow = playing;
   if (activeTab === "Backlog") gamesToShow = backlog;
@@ -87,9 +93,18 @@ function Perfil() {
   if (activeTab === "Platinados") gamesToShow = platinum;
 
   const availableYears = useMemo(() => {
-    const years = new Set(gamesToShow.map(j => j.ano_jogado).filter(Boolean));
+    const years = new Set(
+      gamesToShow
+        .map((j) => {
+          if (activeTab === "Platinados" && j.data_platinado) {
+            return Number(j.data_platinado.split("-")[0]);
+          }
+          return j.ano_jogado;
+        })
+        .filter(Boolean)
+    );
     return Array.from(years).sort((a, b) => Number(b) - Number(a));
-  }, [gamesToShow]);
+  }, [gamesToShow, activeTab]);
 
   const availablePlatforms = useMemo(() => {
     const platforms = new Set(gamesToShow.map(j => j.plataforma).filter(Boolean));
@@ -102,7 +117,13 @@ function Perfil() {
     filteredGames = filteredGames.filter(j => j.nome.toLowerCase().includes(lowerTerm));
   }
   if (yearFilter !== "All") {
-    filteredGames = filteredGames.filter(j => String(j.ano_jogado) === yearFilter);
+    filteredGames = filteredGames.filter(j => {
+      const gameYear =
+        activeTab === "Platinados" && j.data_platinado
+          ? j.data_platinado.split("-")[0]
+          : String(j.ano_jogado);
+      return String(gameYear) === yearFilter;
+    });
   }
   if (platformFilter !== "All") {
     filteredGames = filteredGames.filter(j => j.plataforma === platformFilter);
