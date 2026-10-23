@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from "react";
 import { AppHeader } from "@/components/AppHeader";
 import { gamesQuery, formatRating } from "@/lib/games";
 import { supabase } from "@/integrations/supabase/client";
-import { Pencil, Check, X, Trophy } from "lucide-react";
+import { Pencil, Check, X, Trophy, ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
 import { EditGameModal } from "@/components/EditGameModal";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -220,6 +220,16 @@ function Perfil() {
       <AppHeader />
 
       <main className="mx-auto max-w-5xl p-5 py-10">
+        <div className="mb-6">
+          <Link
+            to="/"
+            className="inline-flex items-center gap-2 rounded-md border border-border bg-surface-2 px-3.5 py-2 text-xs font-semibold text-foreground transition-colors hover:border-ember/50 hover:text-ember"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Voltar para a Dashboard
+          </Link>
+        </div>
+
         {/* Profile Card */}
         <section className="mb-10 flex flex-col sm:flex-row items-center gap-8 rounded-2xl border border-border bg-surface-2 p-8 shadow-sm">
           <div className="h-32 w-32 shrink-0 overflow-hidden rounded-full border-4 border-background shadow-lg">
