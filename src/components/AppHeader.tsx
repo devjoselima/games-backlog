@@ -48,7 +48,7 @@ export function AppHeader() {
       <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-5 py-3">
         <Link to="/" className="flex items-center gap-2 font-display text-lg font-semibold text-ember">
           <Gamepad2 className="h-5 w-5" />
-          Backlog do José
+          Backlog de games
         </Link>
         <nav className="flex items-center gap-1">
           {logado && (
