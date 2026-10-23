@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo } from "react";
+import { toast } from "sonner";
 import {
   Bar,
   BarChart,
@@ -12,10 +13,12 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { Trophy, CheckCircle2, CalendarDays, Clock } from "lucide-react";
+import { Trophy, CheckCircle2, CalendarDays, Clock, Award, RefreshCw } from "lucide-react";
 
 import { AppHeader } from "@/components/AppHeader";
-import { gamesQuery, formatRating, isCompletedStatus, type Game } from "@/lib/games";
+import { gamesQuery, annualTrophiesQuery, formatRating, isCompletedStatus, type Game } from "@/lib/games";
+import { syncAnnualTrophies } from "@/lib/trophies.server";
+import { supabase } from "@/integrations/supabase/client";
 import { useSessaoUsuario } from "@/lib/use-session";
 
 const GENRE_TRANSLATIONS: Record<string, string> = {
@@ -161,9 +164,65 @@ const tooltipStyle = {
 
 function Dashboard() {
   const userId = useSessaoUsuario();
+  const queryClient = useQueryClient();
+  const anoAtual = currentYear();
+
   const { data: games = [], isLoading, error } = useQuery({
     ...gamesQuery,
     enabled: !!userId,
+  });
+
+  const { data: annualTrophies } = useQuery({
+    ...annualTrophiesQuery(anoAtual),
+    enabled: !!userId,
+  });
+
+  const syncTrophiesMutation = useMutation({
+    mutationFn: async () => {
+      if (!userId) throw new Error("Sessão expirada.");
+      const result = await syncAnnualTrophies({ data: { ano: anoAtual } });
+
+      const payload = {
+        user_id: userId,
+        ano: result.ano,
+        total: result.total,
+        steam: result.steam,
+        psn: result.psn,
+      };
+
+      const { error: upsertError } = await supabase
+        .from("trofeus_anuais")
+        .upsert(payload, { onConflict: "user_id,ano" });
+
+      if (upsertError) {
+        // Fallback para user_metadata caso a migration da tabela ainda não tenha sido aplicada no banco remoto
+        await supabase.auth.updateUser({
+          data: {
+            [`trofeus_${result.ano}`]: {
+              ano: result.ano,
+              total: result.total,
+              steam: result.steam,
+              psn: result.psn,
+              updated_at: new Date().toISOString(),
+            },
+          },
+        });
+      }
+
+      return result;
+    },
+    onSuccess: (res) => {
+      queryClient.invalidateQueries({ queryKey: ["annual-trophies", anoAtual] });
+      toast.success(
+        `Troféus de ${res.ano} sincronizados! Total: ${res.total} (Steam: ${res.steam} · PSN: ${res.psn})`,
+      );
+      if (res.warnings.length > 0) {
+        res.warnings.forEach((w) => toast.warning(w));
+      }
+    },
+    onError: (err: Error) => {
+      toast.error(err.message);
+    },
   });
 
   const stats = useMemo(() => {
@@ -339,15 +398,44 @@ function Dashboard() {
         </section>
 
         {/* Contadores */}
-        <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+        <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
           <Stat titulo="Zerados" valor={stats.completed} Icon={CheckCircle2} />
           <Stat titulo="Este ano" valor={stats.thisYear} Icon={CalendarDays} />
           <Stat titulo="Platinados" valor={stats.platinum} Icon={Trophy} />
           <Stat
-            titulo={`Média ${currentYear()}`}
+            titulo={`Média ${anoAtual}`}
             valor={`${stats.average.toFixed(1).replace(".", ",")}h`}
             Icon={Clock}
           />
+          <div className="panel relative flex flex-col items-center justify-center gap-1 px-4 py-5 col-span-2 md:col-span-1">
+            <button
+              type="button"
+              onClick={() => syncTrophiesMutation.mutate()}
+              disabled={syncTrophiesMutation.isPending}
+              title="Sincronizar troféus (Steam + PSN)"
+              className="absolute right-2.5 top-2.5 rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground disabled:opacity-50 cursor-pointer"
+            >
+              <RefreshCw
+                className={`h-3.5 w-3.5 ${syncTrophiesMutation.isPending ? "animate-spin text-primary" : ""}`}
+              />
+            </button>
+            <Award className="h-4 w-4 text-primary" />
+            <span className="font-display text-3xl font-semibold tabular-nums">
+              {annualTrophies?.total ?? "—"}
+            </span>
+            <span className="text-xs uppercase tracking-wider text-muted-foreground">
+              Troféus {anoAtual}
+            </span>
+            {annualTrophies ? (
+              <span className="text-[11px] text-muted-foreground">
+                Steam: {annualTrophies.steam} · PSN: {annualTrophies.psn}
+              </span>
+            ) : (
+              <span className="text-[11px] text-muted-foreground">
+                Clique em ↻ para sincronizar
+              </span>
+            )}
+          </div>
         </div>
 
         {/* Jogando agora */}

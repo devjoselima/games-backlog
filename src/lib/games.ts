@@ -66,3 +66,41 @@ export function formatRating(nota: number | null) {
 }
 
 export const isCompletedStatus = (s: string) => s === "Zerado" || s === "Platinado";
+
+export type AnnualTrophies = {
+  ano: number;
+  total: number;
+  steam: number;
+  psn: number;
+  updated_at?: string;
+};
+
+export async function fetchAnnualTrophies(ano: number): Promise<AnnualTrophies | null> {
+  const { data: sessionData } = await supabase.auth.getUser();
+  const uid = sessionData.user?.id;
+  if (!uid) return null;
+
+  const { data, error } = await supabase
+    .from("trofeus_anuais")
+    .select("ano, total, steam, psn, updated_at")
+    .eq("user_id", uid)
+    .eq("ano", ano)
+    .maybeSingle();
+
+  if (error) {
+    const fallbackMeta = sessionData.user?.user_metadata?.[`trofeus_${ano}`];
+    if (fallbackMeta) return fallbackMeta as AnnualTrophies;
+    return null;
+  }
+
+  if (data) return data as AnnualTrophies;
+
+  const fallbackMeta = sessionData.user?.user_metadata?.[`trofeus_${ano}`];
+  return (fallbackMeta as AnnualTrophies) ?? null;
+}
+
+export const annualTrophiesQuery = (ano: number) =>
+  queryOptions({
+    queryKey: ["annual-trophies", ano],
+    queryFn: () => fetchAnnualTrophies(ano),
+  });
