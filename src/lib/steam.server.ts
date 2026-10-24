@@ -38,8 +38,19 @@ export const syncSteamLibrary = createServerFn({ method: "POST" })
     const apiKey = process.env["STEAM_API_KEY"];
     if (!apiKey) throw new Error("STEAM_API_KEY não configurada no servidor.");
 
+    const inputJson = encodeURIComponent(
+      JSON.stringify({
+        steamid: steamId,
+        include_appinfo: true,
+        include_played_free_games: true,
+        include_free_sub: true,
+        include_family_licenses: true,
+        include_all_free_games: true,
+        skip_unvetted_apps: false,
+      }),
+    );
     const ownedGamesRes = await fetch(
-      `https://api.steampowered.com/IPlayerService/GetOwnedGames/v1/?key=${apiKey}&steamid=${steamId}&include_appinfo=1&include_played_free_games=1`
+      `https://api.steampowered.com/IPlayerService/GetOwnedGames/v1/?key=${encodeURIComponent(apiKey)}&input_json=${inputJson}`
     );
     
     if (!ownedGamesRes.ok) {
