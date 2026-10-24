@@ -360,7 +360,7 @@ function Perfil() {
               className="inline-flex items-center gap-2 rounded-lg border border-[#66c0f4]/30 bg-[#171a21] px-4 py-2 text-xs font-semibold text-[#66c0f4] shadow-sm transition-colors hover:bg-[#2a475e] disabled:opacity-50 cursor-pointer"
             >
               <RefreshCw className={`h-3.5 w-3.5 ${isSyncingSteam ? "animate-spin" : ""}`} />
-              {isSyncingSteam ? "Sincronizando Steam…" : "Sincronizar Horas / Platinas Steam"}
+              {isSyncingSteam ? "Sincronizando Steam…" : "Sincronizar steam"}
             </button>
           </SteamSyncModal>
         </div>
