@@ -266,40 +266,55 @@ function Dashboard() {
   const syncTrophiesMutation = useMutation({
     mutationFn: async () => {
       if (!userId) throw new Error("Sessão expirada.");
-      const result = await syncAnnualTrophies({ data: { ano: targetSyncYear } });
+      const isSyncAll = selectedYear === "All";
+      const steamGameNames = games
+        .filter((g) => g.plataforma === "Steam")
+        .map((g) => g.nome);
 
-      const payload = {
+      const result = await syncAnnualTrophies({
+        data: {
+          ano: targetSyncYear,
+          allYears: isSyncAll,
+          startYear: 2015,
+          steamGameNames,
+        },
+      });
+
+      const rowsToUpsert = (result.yearsData || []).map((entry) => ({
         user_id: userId,
-        ano: result.ano,
-        total: result.total,
-        steam: result.steam,
-        psn: result.psn,
-      };
+        ano: entry.ano,
+        total: entry.total,
+        steam: entry.steam,
+        psn: entry.psn,
+      }));
 
-      const { error: upsertError } = await supabase
-        .from("trofeus_anuais")
-        .upsert(payload, { onConflict: "user_id,ano" });
+      if (rowsToUpsert.length > 0) {
+        const { error: upsertError } = await supabase
+          .from("trofeus_anuais")
+          .upsert(rowsToUpsert, { onConflict: "user_id,ano" });
 
-      if (upsertError) {
-        await supabase.auth.updateUser({
-          data: {
-            [`trofeus_${result.ano}`]: {
-              ano: result.ano,
-              total: result.total,
-              steam: result.steam,
-              psn: result.psn,
+        if (upsertError) {
+          const metaUpdates: Record<string, any> = {};
+          for (const entry of result.yearsData || []) {
+            metaUpdates[`trofeus_${entry.ano}`] = {
+              ano: entry.ano,
+              total: entry.total,
+              steam: entry.steam,
+              psn: entry.psn,
               updated_at: new Date().toISOString(),
-            },
-          },
-        });
+            };
+          }
+          await supabase.auth.updateUser({ data: metaUpdates });
+        }
       }
 
-      return result;
+      return { ...result, isSyncAll };
     },
     onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: ["annual-trophies"] });
+      const label = res.isSyncAll ? `2015–${anoAtual}` : String(res.ano);
       toast.success(
-        `Troféus de ${res.ano} sincronizados! Total: ${res.total} (Steam: ${res.steam} · PSN: ${res.psn})`,
+        `Troféus (${label}) sincronizados! Total: ${res.total} (Steam: ${res.steam} · PSN: ${res.psn})`,
       );
       if (res.warnings.length > 0) {
         res.warnings.forEach((w) => toast.warning(w));
@@ -635,13 +650,21 @@ function Dashboard() {
                 type="button"
                 onClick={() => syncTrophiesMutation.mutate()}
                 disabled={syncTrophiesMutation.isPending}
-                title={`Sincronizar troféus de ${targetSyncYear} (Steam + PSN)`}
+                title={
+                  selectedYear === "All"
+                    ? `Sincronizar todos os anos (2015–${anoAtual}) de uma vez`
+                    : `Sincronizar troféus de ${targetSyncYear} (Steam + PSN)`
+                }
                 className="inline-flex items-center gap-1.5 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold text-amber-300 transition-colors hover:bg-amber-500/20 disabled:opacity-50 cursor-pointer shrink-0"
               >
                 <RefreshCw
                   className={`h-3.5 w-3.5 ${syncTrophiesMutation.isPending ? "animate-spin" : ""}`}
                 />
-                {syncTrophiesMutation.isPending ? "Sincronizando…" : `Sync ${targetSyncYear}`}
+                {syncTrophiesMutation.isPending
+                  ? "Sincronizando…"
+                  : selectedYear === "All"
+                    ? "Sync Todos"
+                    : `Sync ${targetSyncYear}`}
               </button>
             </div>
 
