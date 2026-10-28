@@ -103,6 +103,11 @@ export type Database = {
           ordem: number | null
           plataforma: string | null
           status: string
+          tempo_zerar: number | null
+          tempo_platinar: number | null
+          trofeus_obtidos: number | null
+          trofeus_totais: number | null
+          trofeus_psn: Json | null
           updated_at: string
           user_id: string
         }
@@ -120,6 +125,11 @@ export type Database = {
           ordem?: number | null
           plataforma?: string | null
           status?: string
+          tempo_zerar?: number | null
+          tempo_platinar?: number | null
+          trofeus_obtidos?: number | null
+          trofeus_totais?: number | null
+          trofeus_psn?: Json | null
           updated_at?: string
           user_id?: string
         }
@@ -137,6 +147,11 @@ export type Database = {
           ordem?: number | null
           plataforma?: string | null
           status?: string
+          tempo_zerar?: number | null
+          tempo_platinar?: number | null
+          trofeus_obtidos?: number | null
+          trofeus_totais?: number | null
+          trofeus_psn?: Json | null
           updated_at?: string
           user_id?: string
         }
