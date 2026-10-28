@@ -1,8 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { AppHeader } from "@/components/AppHeader";
-import { gamesQuery, formatRating, type Game } from "@/lib/games";
+import { gamesQuery, formatRating, saveGameDetailsToDb, type Game } from "@/lib/games";
+import { backfillGamesDetails } from "@/lib/game-details.server";
 import { supabase } from "@/integrations/supabase/client";
 import {
   Pencil,
@@ -81,6 +82,93 @@ function Perfil() {
 
   const [isEditingName, setIsEditingName] = useState(false);
   const [editNameValue, setEditNameValue] = useState("");
+  const backfilledIdsRef = useRef<Set<string>>(new Set());
+  const isBackfillingRef = useRef(false);
+
+  useEffect(() => {
+    if (isLoading || games.length === 0 || isBackfillingRef.current) return;
+
+    const hltbMigratedKey = "hltb_time_migrated_v1";
+    const needsFullHltbRefresh =
+      typeof window !== "undefined" && !window.localStorage.getItem(hltbMigratedKey);
+
+    const pending = games
+      .filter((g) => {
+        if (backfilledIdsRef.current.has(g.id)) return false;
+        const needTime =
+          needsFullHltbRefresh || (g.tempo_zerar === null && g.tempo_platinar === null);
+        const canHaveAch =
+          (g.status === "Jogando" || g.status === "Zerado" || g.status === "Platinado") &&
+          (g.plataforma === "PSN" || g.plataforma === "Steam");
+        const needAchievements =
+          canHaveAch && (g.trofeus_totais === null || (g.plataforma === "PSN" && !g.trofeus_psn));
+        return needTime || needAchievements;
+      })
+      .map((g) => {
+        const needTime =
+          needsFullHltbRefresh || (g.tempo_zerar === null && g.tempo_platinar === null);
+        const canHaveAch =
+          (g.status === "Jogando" || g.status === "Zerado" || g.status === "Platinado") &&
+          (g.plataforma === "PSN" || g.plataforma === "Steam");
+        const needAchievements =
+          canHaveAch && (g.trofeus_totais === null || (g.plataforma === "PSN" && !g.trofeus_psn));
+        return {
+          id: g.id,
+          nome: g.nome,
+          imagem: g.imagem,
+          plataforma: g.plataforma,
+          status: g.status,
+          needTime,
+          needAchievements,
+        };
+      });
+
+    if (pending.length === 0) {
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem(hltbMigratedKey, "1");
+      }
+      return;
+    }
+
+    isBackfillingRef.current = true;
+    for (const item of pending) {
+      backfilledIdsRef.current.add(item.id);
+    }
+
+    void (async () => {
+      try {
+        const batchSize = 5;
+        for (let i = 0; i < pending.length; i += batchSize) {
+          const batch = pending.slice(i, i + batchSize);
+          const results = await backfillGamesDetails({ data: { games: batch } });
+          if (results.length > 0) {
+            for (const res of results) {
+              const { id, ...patch } = res;
+              await saveGameDetailsToDb(id, patch);
+            }
+            const resultMap = new Map(results.map((r) => [r.id, r]));
+            queryClient.setQueryData<Game[]>(["games"], (old) =>
+              old
+                ? old.map((g) => {
+                    const hit = resultMap.get(g.id);
+                    if (!hit) return g;
+                    const { id: _id, ...patch } = hit;
+                    return { ...g, ...patch };
+                  })
+                : old,
+            );
+          }
+        }
+        if (typeof window !== "undefined") {
+          window.localStorage.setItem(hltbMigratedKey, "1");
+        }
+      } catch {
+        // ignore background backfill errors
+      } finally {
+        isBackfillingRef.current = false;
+      }
+    })();
+  }, [games, isLoading, queryClient]);
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
@@ -218,6 +306,8 @@ function Perfil() {
           nome: g.nome,
           status: g.status,
           horas_jogadas: g.horas_jogadas,
+          trofeus_obtidos: g.trofeus_obtidos,
+          trofeus_totais: g.trofeus_totais,
         }));
 
       if (steamGamesInput.length === 0) {
@@ -254,6 +344,8 @@ function Perfil() {
           horas: update.horas_jogadas || 0,
           platinou: update.status === "Platinado" || payload.status === "Platinado",
           status: payload.status,
+          trofeus_obtidos: update.trofeus_obtidos ?? null,
+          trofeus_totais: update.trofeus_totais ?? null,
         };
       });
 
@@ -273,7 +365,16 @@ function Perfil() {
       for (const res of confirmedResults) {
         const payload: any = { horas_jogadas: res.horas };
         if (res.status) payload.status = res.status;
-        await supabase.from("jogos").update(payload).eq("id", res.id);
+        if (res.trofeus_obtidos !== undefined && res.trofeus_totais !== undefined) {
+          payload.trofeus_obtidos = res.trofeus_obtidos;
+          payload.trofeus_totais = res.trofeus_totais;
+        }
+        const { error } = await supabase.from("jogos").update(payload).eq("id", res.id);
+        if (error && (error.message?.includes("trofeus_") || (error as any).code === "42703")) {
+          delete payload.trofeus_obtidos;
+          delete payload.trofeus_totais;
+          await supabase.from("jogos").update(payload).eq("id", res.id);
+        }
         count++;
       }
       toast.success(`${count} jogos sincronizados com sucesso!`, { id: toastId });

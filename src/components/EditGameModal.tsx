@@ -8,12 +8,29 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
+import { Skeleton } from "@/components/ui/skeleton";
 import { format } from "date-fns";
-import { CalendarIcon, Trash2 } from "lucide-react";
+import { Award, CalendarIcon, Clock, Medal, RefreshCw, Sparkles, Trash2, Trophy } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { PLATFORM_OPTIONS, STATUS_OPTIONS, type Game } from "@/lib/games";
+import {
+  PLATFORM_OPTIONS,
+  STATUS_OPTIONS,
+  saveGameDetailsToDb,
+  type Game,
+  type PsnTrophyBreakdown,
+} from "@/lib/games";
+import { getGameModalDetails } from "@/lib/game-details.server";
+
+function getHighResCover(url?: string | null): string | null {
+  if (!url) return null;
+  return url.replace(
+    /\/t_(?:cover_big|cover_small|thumb|logo_med)\//i,
+    "/t_cover_big_2x/",
+  );
+}
 
 export function EditGameModal({ jogo, capa, children }: { jogo: Game; capa?: string | null; children: React.ReactNode }) {
+  const highResCapa = getHighResCover(capa ?? jogo.imagem);
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({
     plataforma: jogo.plataforma || "",
@@ -27,11 +44,99 @@ export function EditGameModal({ jogo, capa, children }: { jogo: Game; capa?: str
     nota: jogo.nota ? String(jogo.nota) : "",
     horas_jogadas: jogo.horas_jogadas ? String(jogo.horas_jogadas) : "",
   });
+
+  const [details, setDetails] = useState<{
+    tempo_zerar: number | null;
+    tempo_platinar: number | null;
+    trofeus_obtidos: number | null;
+    trofeus_totais: number | null;
+    trofeus_psn: PsnTrophyBreakdown | null;
+  }>({
+    tempo_zerar: jogo.tempo_zerar ?? null,
+    tempo_platinar: jogo.tempo_platinar ?? null,
+    trofeus_obtidos: jogo.trofeus_obtidos ?? null,
+    trofeus_totais: jogo.trofeus_totais ?? null,
+    trofeus_psn: jogo.trofeus_psn ?? null,
+  });
+  const [loadingTime, setLoadingTime] = useState(false);
+  const [loadingTrophies, setLoadingTrophies] = useState(false);
   const queryClient = useQueryClient();
+
+  const showTrophiesSection =
+    form.status === "Jogando" || form.status === "Zerado" || form.status === "Platinado";
+  const supportsTrophiesPlatform =
+    form.plataforma === "PSN" || form.plataforma === "Steam";
+
+  const fetchAndPersistDetails = async (opts: {
+    forceTime?: boolean;
+    forceTrophies?: boolean;
+    plataformaAtual?: string;
+    statusAtual?: string;
+  }) => {
+    const plat = opts.plataformaAtual ?? form.plataforma;
+    const st = opts.statusAtual ?? form.status;
+    const canShowTrophies =
+      (st === "Jogando" || st === "Zerado" || st === "Platinado") &&
+      (plat === "PSN" || plat === "Steam");
+
+    const needTime =
+      Boolean(opts.forceTime) ||
+      (details.tempo_zerar === null && details.tempo_platinar === null);
+    const needAch =
+      canShowTrophies &&
+      (Boolean(opts.forceTrophies) ||
+        details.trofeus_totais === null ||
+        (plat === "PSN" && !details.trofeus_psn));
+
+    if (!needTime && !needAch) return;
+
+    if (needTime && details.tempo_zerar === null && details.tempo_platinar === null) {
+      setLoadingTime(true);
+    }
+    if (needAch && details.trofeus_totais === null) {
+      setLoadingTrophies(true);
+    }
+
+    try {
+      const res = await getGameModalDetails({
+        data: {
+          nome: jogo.nome,
+          imagem: jogo.imagem,
+          plataforma: plat || null,
+          includeAchievements: needAch,
+          needTimeToBeat: needTime,
+        },
+      });
+
+      const patch: Partial<typeof details> = {};
+      if (needTime && res.timeToBeat) {
+        patch.tempo_zerar = res.timeToBeat.mainHours;
+        patch.tempo_platinar = res.timeToBeat.completionistHours;
+      }
+      if (needAch && res.achievements) {
+        patch.trofeus_obtidos = res.achievements.unlocked;
+        patch.trofeus_totais = res.achievements.total;
+        patch.trofeus_psn = res.achievements.breakdown ?? null;
+      }
+
+      if (Object.keys(patch).length > 0) {
+        setDetails((prev) => ({ ...prev, ...patch }));
+        await saveGameDetailsToDb(jogo.id, patch);
+        queryClient.setQueryData<Game[]>(["games"], (old) =>
+          old ? old.map((g) => (g.id === jogo.id ? { ...g, ...patch } : g)) : old,
+        );
+      }
+    } catch {
+      // silent fallback
+    } finally {
+      if (needTime) setLoadingTime(false);
+      if (needAch) setLoadingTrophies(false);
+    }
+  };
 
   useEffect(() => {
     if (open) {
-      setForm({
+      const initialForm = {
         plataforma: jogo.plataforma || "",
         status: jogo.status || "Zerado",
         data_zerado: jogo.data_zerado || (jogo.ano_jogado && jogo.status !== "Platinado" ? `${jogo.ano_jogado}-01-01` : ""),
@@ -42,7 +147,33 @@ export function EditGameModal({ jogo, capa, children }: { jogo: Game; capa?: str
             : ""),
         nota: jogo.nota ? String(jogo.nota) : "",
         horas_jogadas: jogo.horas_jogadas ? String(jogo.horas_jogadas) : "",
+      };
+      setForm(initialForm);
+      setDetails({
+        tempo_zerar: jogo.tempo_zerar ?? null,
+        tempo_platinar: jogo.tempo_platinar ?? null,
+        trofeus_obtidos: jogo.trofeus_obtidos ?? null,
+        trofeus_totais: jogo.trofeus_totais ?? null,
+        trofeus_psn: jogo.trofeus_psn ?? null,
       });
+
+      const needTime = jogo.tempo_zerar === null && jogo.tempo_platinar === null;
+      const canShowTrophies =
+        (initialForm.status === "Jogando" ||
+          initialForm.status === "Zerado" ||
+          initialForm.status === "Platinado") &&
+        (initialForm.plataforma === "PSN" || initialForm.plataforma === "Steam");
+      const needAch =
+        canShowTrophies &&
+        (jogo.trofeus_totais === null ||
+          (initialForm.plataforma === "PSN" && !jogo.trofeus_psn));
+
+      if (needTime || needAch) {
+        void fetchAndPersistDetails({
+          plataformaAtual: initialForm.plataforma,
+          statusAtual: initialForm.status,
+        });
+      }
     }
   }, [open, jogo]);
 
@@ -116,20 +247,9 @@ export function EditGameModal({ jogo, capa, children }: { jogo: Game; capa?: str
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>{children}</DialogTrigger>
-      <DialogContent className="sm:max-w-[650px] bg-background p-0 overflow-hidden gap-0 border-border">
-        <div className="flex flex-col sm:flex-row h-full w-full">
-          {capa && (
-            <div className="hidden sm:block w-[160px] shrink-0 bg-surface-2 relative">
-              <img src={capa} alt={jogo.nome} className="h-full w-full object-cover" />
-              <div className="absolute inset-0 bg-gradient-to-t from-background/40 to-transparent" />
-            </div>
-          )}
-          <div className="flex-1 flex flex-col p-6">
-            <DialogHeader>
-              <DialogTitle className="line-clamp-2 leading-tight" title={jogo.nome}>{jogo.nome}</DialogTitle>
-            </DialogHeader>
-            <form
-              className="flex flex-col gap-4 pt-4 w-full h-full"
+      <DialogContent className="sm:max-w-[540px] bg-background p-6 gap-0 border-border">
+        <form
+          className="flex flex-col gap-4 w-full"
           onSubmit={(e) => {
             e.preventDefault();
             if (form.status === "Platinado" && !form.data_platinado) {
@@ -139,42 +259,231 @@ export function EditGameModal({ jogo, capa, children }: { jogo: Game; capa?: str
             atualizar.mutate();
           }}
         >
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label>Status</Label>
-              <Select
-                value={form.status}
-                onValueChange={(val) => {
-                  set("status")(val);
-                  if (val === "Platinado" && !form.data_platinado && form.data_zerado) {
-                    set("data_platinado")(form.data_zerado);
-                  }
-                }}
-              >
-                <SelectTrigger className="bg-surface-2">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {STATUS_OPTIONS.map((s) => (
-                    <SelectItem key={s} value={s}>{s}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label>Plataforma</Label>
-              <Select value={form.plataforma} onValueChange={set("plataforma")}>
-                <SelectTrigger className="bg-surface-2">
-                  <SelectValue placeholder="Selecione" />
-                </SelectTrigger>
-                <SelectContent>
-                  {PLATFORM_OPTIONS.map((p) => (
-                    <SelectItem key={p} value={p}>{p}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+          {/* Topo: Capa 3:4 à esquerda + (Título, Tempo Zerar/Platinar e Status/Plataforma) à direita */}
+          <div className="flex items-start gap-4">
+            {highResCapa && (
+              <div className="w-28 sm:w-32 aspect-[3/4] shrink-0 rounded-lg overflow-hidden border border-border/80 bg-surface-2 shadow-md">
+                <img
+                  src={highResCapa}
+                  alt={jogo.nome}
+                  className="h-full w-full object-cover"
+                />
+              </div>
+            )}
+            <div className="flex-1 min-w-0 flex flex-col gap-2.5">
+              <DialogHeader className="text-left pr-6">
+                <DialogTitle className="text-lg sm:text-xl font-bold line-clamp-2 leading-tight" title={jogo.nome}>
+                  {jogo.nome}
+                </DialogTitle>
+              </DialogHeader>
+
+              {/* Cards de Tempo (Zerar / Platinar) logo abaixo do título */}
+              <div className="grid grid-cols-2 gap-2">
+                <div className="flex items-center gap-2.5 rounded-lg border border-border/80 bg-surface-2/70 px-2.5 py-2">
+                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-ember/15 text-ember">
+                    <Clock className="h-3.5 w-3.5" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-medium text-muted-foreground leading-none">
+                      Zerar
+                    </p>
+                    {loadingTime ? (
+                      <Skeleton className="mt-1 h-4 w-12" />
+                    ) : (
+                      <p className="mt-1 text-sm font-semibold text-foreground leading-none">
+                        {details.tempo_zerar !== null
+                          ? `~${String(details.tempo_zerar).replace(".", ",")}h`
+                          : "—"}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2.5 rounded-lg border border-border/80 bg-surface-2/70 px-2.5 py-2">
+                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-platinum/15 text-platinum">
+                    <Trophy className="h-3.5 w-3.5" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-medium text-muted-foreground leading-none">
+                      Platinar
+                    </p>
+                    {loadingTime ? (
+                      <Skeleton className="mt-1 h-4 w-12" />
+                    ) : (
+                      <p className="mt-1 text-sm font-semibold text-foreground leading-none">
+                        {details.tempo_platinar !== null
+                          ? `~${String(details.tempo_platinar).replace(".", ",")}h`
+                          : "—"}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Status e Plataforma preenchendo a base ao lado da capa */}
+              <div className="grid grid-cols-2 gap-2.5 pt-0.5">
+                <div className="space-y-1">
+                  <Label className="text-xs">Status</Label>
+                  <Select
+                    value={form.status}
+                    onValueChange={(val) => {
+                      set("status")(val);
+                      if (val === "Platinado" && !form.data_platinado && form.data_zerado) {
+                        set("data_platinado")(form.data_zerado);
+                      }
+                      if (
+                        (val === "Jogando" || val === "Zerado" || val === "Platinado") &&
+                        details.trofeus_totais === null
+                      ) {
+                        void fetchAndPersistDetails({ statusAtual: val });
+                      }
+                    }}
+                  >
+                    <SelectTrigger className="bg-surface-2 h-9">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {STATUS_OPTIONS.map((s) => (
+                        <SelectItem key={s} value={s}>{s}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Plataforma</Label>
+                  <Select
+                    value={form.plataforma}
+                    disabled={form.status === "Zerado" || form.status === "Platinado"}
+                    onValueChange={(val) => {
+                      set("plataforma")(val);
+                      if (val === "PSN" || val === "Steam") {
+                        void fetchAndPersistDetails({
+                          plataformaAtual: val,
+                          forceTrophies: val !== jogo.plataforma,
+                        });
+                      }
+                    }}
+                  >
+                    <SelectTrigger className="bg-surface-2 h-9">
+                      <SelectValue placeholder="Selecione" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {PLATFORM_OPTIONS.map((p) => (
+                        <SelectItem key={p} value={p}>{p}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
             </div>
           </div>
+
+          {/* Seção 2: Progresso de Troféus / Conquistas (Largura total abaixo do topo) */}
+          {showTrophiesSection && supportsTrophiesPlatform && (
+            <div className="rounded-lg border border-border/80 bg-surface-2/60 px-3.5 py-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                  <Award className="h-3.5 w-3.5 text-ember" />
+                  <span>
+                    {form.plataforma === "PSN" ? "Troféus PSN" : "Conquistas Steam"}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  {loadingTrophies ? (
+                    <Skeleton className="h-4 w-24" />
+                  ) : details.trofeus_totais !== null && details.trofeus_totais > 0 ? (
+                    <span className="text-xs font-semibold text-foreground">
+                      {details.trofeus_obtidos ?? 0} / {details.trofeus_totais}{" "}
+                      <span className="text-muted-foreground font-normal">
+                        ({Math.min(100, Math.round(((details.trofeus_obtidos ?? 0) / details.trofeus_totais) * 100))}%)
+                      </span>
+                    </span>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">Sem dados</span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void fetchAndPersistDetails({
+                        forceTrophies: true,
+                        forceTime: details.tempo_zerar === null && details.tempo_platinar === null,
+                      })
+                    }
+                    disabled={loadingTrophies}
+                    className="rounded p-1 text-muted-foreground transition-colors hover:bg-surface hover:text-foreground disabled:opacity-50"
+                    title="Atualizar progresso de troféus"
+                  >
+                    <RefreshCw className={`h-3 w-3 ${loadingTrophies ? "animate-spin" : ""}`} />
+                  </button>
+                </div>
+              </div>
+
+              {loadingTrophies ? (
+                <Skeleton className="mt-2 h-2 w-full rounded-full" />
+              ) : (
+                details.trofeus_totais !== null &&
+                details.trofeus_totais > 0 && (
+                  <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-background/80">
+                    <div
+                      className={`h-full rounded-full transition-all duration-500 ${
+                        (details.trofeus_obtidos ?? 0) >= details.trofeus_totais
+                          ? "bg-platinum"
+                          : "bg-ember"
+                      }`}
+                      style={{
+                        width: `${Math.min(
+                          100,
+                          Math.round(((details.trofeus_obtidos ?? 0) / details.trofeus_totais) * 100),
+                        )}%`,
+                      }}
+                    />
+                  </div>
+                )
+              )}
+
+              {/* Incremento I2: Quebra por raridade quando for PSN */}
+              {form.plataforma === "PSN" && !loadingTrophies && details.trofeus_psn && (
+                <div className="mt-2.5 grid grid-cols-4 gap-1.5">
+                  <div className="flex items-center justify-between rounded border border-sky-400/20 bg-sky-500/10 px-2 py-1 text-[11px]">
+                    <span className="flex items-center gap-1 font-medium text-sky-300" title="Platina">
+                      <Sparkles className="h-3 w-3 shrink-0" />
+                      <span>Plat.</span>
+                    </span>
+                    <span className="font-semibold text-foreground">
+                      {details.trofeus_psn.platinum.earned}/{details.trofeus_psn.platinum.total}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between rounded border border-amber-400/20 bg-amber-500/10 px-2 py-1 text-[11px]">
+                    <span className="flex items-center gap-1 font-medium text-amber-300" title="Ouro">
+                      <Trophy className="h-3 w-3 shrink-0" />
+                      <span>Ouro</span>
+                    </span>
+                    <span className="font-semibold text-foreground">
+                      {details.trofeus_psn.gold.earned}/{details.trofeus_psn.gold.total}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between rounded border border-slate-300/20 bg-slate-400/10 px-2 py-1 text-[11px]">
+                    <span className="flex items-center gap-1 font-medium text-slate-300" title="Prata">
+                      <Medal className="h-3 w-3 shrink-0" />
+                      <span>Prata</span>
+                    </span>
+                    <span className="font-semibold text-foreground">
+                      {details.trofeus_psn.silver.earned}/{details.trofeus_psn.silver.total}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between rounded border border-orange-500/20 bg-orange-500/10 px-2 py-1 text-[11px]">
+                    <span className="flex items-center gap-1 font-medium text-orange-300" title="Bronze">
+                      <Medal className="h-3 w-3 shrink-0" />
+                      <span>Bronze</span>
+                    </span>
+                    <span className="font-semibold text-foreground">
+                      {details.trofeus_psn.bronze.earned}/{details.trofeus_psn.bronze.total}
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           {form.status === "Zerado" && (
             <div className="grid grid-cols-3 gap-3">
@@ -355,7 +664,7 @@ export function EditGameModal({ jogo, capa, children }: { jogo: Game; capa?: str
             </div>
           )}
 
-            <div className="mt-auto flex gap-2 pt-4">
+            <div className="mt-1 flex gap-2 pt-2">
               <Button
                 type="button"
                 variant="outline"
@@ -370,9 +679,7 @@ export function EditGameModal({ jogo, capa, children }: { jogo: Game; capa?: str
                 {atualizar.isPending ? "Salvando…" : "Salvar"}
               </Button>
             </div>
-          </form>
-          </div>
-        </div>
+        </form>
       </DialogContent>
     </Dialog>
   );
