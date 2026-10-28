@@ -29,10 +29,12 @@ export type SyncResult = {
   horas_jogadas?: number;
   status?: string;
   steamName?: string;
+  trofeus_obtidos?: number | null;
+  trofeus_totais?: number | null;
 };
 
 export const syncSteamLibrary = createServerFn({ method: "POST" })
-  .validator((input: { steamId: string; localGames: { id: string; nome: string; status: string; horas_jogadas: number | null }[] }) => input)
+  .validator((input: { steamId: string; localGames: { id: string; nome: string; status: string; horas_jogadas: number | null; trofeus_obtidos?: number | null; trofeus_totais?: number | null }[] }) => input)
   .handler(async ({ data }): Promise<SyncResult[]> => {
     const { steamId, localGames } = data;
     const apiKey = process.env["STEAM_API_KEY"];
@@ -69,28 +71,35 @@ export const syncSteamLibrary = createServerFn({ method: "POST" })
 
       const horasJogadas = Math.floor(match.playtime_forever / 60);
       let novoStatus = localGame.status;
+      let trofeusObtidos: number | null = localGame.trofeus_obtidos ?? null;
+      let trofeusTotais: number | null = localGame.trofeus_totais ?? null;
 
-      if (novoStatus !== "Platinado") {
-        try {
-          const achRes = await fetch(
-            `https://api.steampowered.com/ISteamUserStats/GetPlayerAchievements/v0001/?appid=${match.appid}&key=${apiKey}&steamid=${steamId}`
-          );
-          if (achRes.ok) {
-            const achData = await achRes.json();
-            const achievements = achData?.playerstats?.achievements || [];
-            if (achievements.length > 0) {
-              const unlocked = achievements.filter((a: any) => a.achieved === 1).length;
-              if (unlocked === achievements.length) {
-                novoStatus = "Platinado";
-              }
+      try {
+        const achRes = await fetch(
+          `https://api.steampowered.com/ISteamUserStats/GetPlayerAchievements/v0001/?appid=${match.appid}&key=${encodeURIComponent(apiKey)}&steamid=${encodeURIComponent(steamId)}`
+        );
+        if (achRes.ok) {
+          const achData = await achRes.json();
+          const achievements = achData?.playerstats?.achievements || [];
+          if (achievements.length > 0) {
+            const unlocked = achievements.filter((a: any) => a.achieved === 1).length;
+            trofeusObtidos = unlocked;
+            trofeusTotais = achievements.length;
+            if (unlocked === achievements.length && novoStatus !== "Platinado") {
+              novoStatus = "Platinado";
             }
           }
-        } catch (e) {
         }
+      } catch (e) {
       }
 
       // Skip if nothing changed
-      if (horasJogadas === localGame.horas_jogadas && novoStatus === localGame.status) {
+      if (
+        horasJogadas === localGame.horas_jogadas &&
+        novoStatus === localGame.status &&
+        trofeusObtidos === (localGame.trofeus_obtidos ?? null) &&
+        trofeusTotais === (localGame.trofeus_totais ?? null)
+      ) {
         continue;
       }
 
@@ -99,6 +108,8 @@ export const syncSteamLibrary = createServerFn({ method: "POST" })
         horas_jogadas: horasJogadas,
         status: novoStatus,
         steamName: match.name,
+        trofeus_obtidos: trofeusObtidos,
+        trofeus_totais: trofeusTotais,
       });
     }
 

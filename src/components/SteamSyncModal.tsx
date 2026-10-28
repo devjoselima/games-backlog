@@ -12,6 +12,8 @@ export type SyncResultDisplay = {
   horas: number;
   platinou: boolean;
   status: string;
+  trofeus_obtidos?: number | null;
+  trofeus_totais?: number | null;
 };
 
 export function SteamSyncModal({ children, onSync, isSyncing, pendingResults, onConfirm, onCancel }: { 
